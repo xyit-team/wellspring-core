@@ -1,0 +1,94 @@
+name: release
+
+# 推 v* 标签发版：npm 上是 @xyit/wellspring-core@x.y.z，
+# GitHub Release 里挂可直接 `wellspring plugin install` 的 zip。
+on:
+    push:
+        tags: ["v*"]
+
+jobs:
+    publish:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 20
+        permissions:
+            contents: write
+            # npm 的 provenance（可信发布）需要 OIDC
+            id-token: write
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  registry-url: https://registry.npmjs.org
+
+            - name: 安装依赖（严格按 lockfile）
+              run: npm ci --no-audit --no-fund
+
+            # 标签与版本必须一致：插件 zip 与 npm 包都用 package.json 的 version，
+            # 对不上就会出现「文件名相同、内容不同」的包
+            - name: 核对标签与 package.json 的版本
+              run: |
+                  set -euo pipefail
+                  tag="${GITHUB_REF_NAME}"
+                  version="v$(node -p "require('./package.json').version")"
+                  if [ "$tag" != "$version" ]; then
+                    echo "标签是 $tag，但 package.json 里是 $version。"
+                    echo "先改版本号并提交，再用同名标签。"
+                    exit 1
+                  fi
+                  echo "版本对得上：$tag"
+
+            - name: 类型检查
+              run: npm run typecheck
+
+            - name: 测试
+              run: npm test
+
+            - name: 打包插件
+              run: npm run build:zip
+
+            - name: 生成校验和
+              run: |
+                  set -euo pipefail
+                  cd release
+                  sha256sum ./*.zip > SHA256SUMS
+                  cat SHA256SUMS
+
+            - name: 该版本是否已发布
+              id: exists
+              run: |
+                  set -euo pipefail
+                  name="$(node -p "require('./package.json').name")"
+                  version="$(node -p "require('./package.json').version")"
+                  if npm view "${name}@${version}" version >/dev/null 2>&1; then
+                    echo "${name}@${version} 已经发布过，跳过发布"
+                    echo "skip=1" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "${name}@${version} 还没发布，继续"
+                  fi
+
+            # registry.npmjs.org 上需要仓库 secret NPM_TOKEN（Automation 类型的 npm token）
+            - name: 发布到 npm
+              if: steps.exists.outputs.skip != '1'
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+              run: npm publish --access public --provenance
+
+            - name: 建 Release 并挂 zip
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  TAG: ${{ github.ref_name }}
+              run: |
+                  set -euo pipefail
+                  files=(release/*.zip release/SHA256SUMS)
+                  ls -lh "${files[@]}"
+                  if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                    gh release upload "$TAG" "${files[@]}" -R "$GITHUB_REPOSITORY" --clobber
+                  else
+                    gh release create "$TAG" -R "$GITHUB_REPOSITORY" \
+                      --title "$TAG" \
+                      --generate-notes \
+                      "${files[@]}"
+                  fi
+                  gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json url --jq .url

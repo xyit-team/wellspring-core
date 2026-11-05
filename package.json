@@ -1,0 +1,71 @@
+{
+    "name": "@xyit/wellspring-core",
+    "version": "1.0.0",
+    "description": "Wellspring 官方核心插件：文件读写、网页抓取、沙箱执行与技能",
+    "license": "MIT",
+    "type": "module",
+    "main": "index.ts",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/xyit-team/wellspring-core.git"
+    },
+    "homepage": "https://github.com/xyit-team/wellspring-core#readme",
+    "bugs": {
+        "url": "https://github.com/xyit-team/wellspring-core/issues"
+    },
+    "keywords": [
+        "wellspring",
+        "wellspring-plugin",
+        "agent",
+        "plugin"
+    ],
+    "files": [
+        "index.ts",
+        "render.ts",
+        "retention.ts",
+        "session-prompt.ts",
+        "skills.ts",
+        "trash.ts",
+        "update.ts",
+        "migrate.ts",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "prepare:host": "node scripts/prepare-host.mjs",
+        "typecheck": "tsc --noEmit",
+        "pretest": "node scripts/prepare-host.mjs",
+        "test": "node scripts/run-tests.mjs",
+        "build:zip": "node scripts/build-zip.mjs"
+    },
+    "devDependencies": {
+        "@types/node": "^26.6.5",
+        "@xyit/wellspring": "^1.5.3",
+        "pino": "^10.4.0",
+        "typescript": "^7.0.2"
+    },
+    "wellspring": {
+        "apiVersion": 1,
+        "sandbox": {
+            "profile": "plugin",
+            "fs": {
+                "read": [
+                    "${pluginDir}",
+                    "${workspace}"
+                ],
+                "write": [
+                    "${dataDir}",
+                    "${workspace}"
+                ]
+            },
+            "hostApi": [
+                "logger",
+                "fs",
+                "capabilities",
+                "getHost",
+                "migrate"
+            ],
+            "network": true
+        }
+    }
+}

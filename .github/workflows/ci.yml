@@ -1,0 +1,40 @@
+name: ci
+
+on:
+    push:
+        branches: [master]
+    pull_request:
+
+jobs:
+    test:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+
+            - name: 安装依赖（严格按 lockfile）
+              run: npm ci --no-audit --no-fund
+
+            - name: 类型检查
+              run: npm run typecheck
+
+            - name: 测试
+              # pretest 会把宿主包的 src 复制到 .host/：Node 不允许剥离 node_modules 下的 .ts，
+              # 集成测试要按宿主源码跑
+              run: npm test
+
+            - name: 打包插件
+              run: npm run build:zip
+
+            - name: 冒烟：zip 里必须有 package.json 与入口
+              run: |
+                  set -euo pipefail
+                  unzip -Z1 release/*.zip > /tmp/zip.txt
+                  cat /tmp/zip.txt
+                  grep -qx 'package.json' /tmp/zip.txt
+                  grep -qx 'index.ts' /tmp/zip.txt
+                  grep -qx 'update.ts' /tmp/zip.txt
