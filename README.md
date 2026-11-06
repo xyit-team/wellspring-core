@@ -1,16 +1,16 @@
-# @xyit/wellspring-core
+# @xyit-team/wellspring-core
 
 Wellspring 官方核心插件：`read` / `delete_file` / `execute_code` / `web_search` / `web_fetch` /
 `query_task` / `stop_task` 等 Agent 基础工具，外加 SKILL 管理与会话环境注入。
 
-插件独立发版：npm 上是 `@xyit/wellspring-core@x.y.z`，GitHub Release 里附
+插件独立发版：npm 上是 `@xyit-team/wellspring-core@x.y.z`，GitHub Release 里附
 可直接安装的 `wellspring-core-x.y.z.zip`。
 
 ## 安装与升级
 
 ```bash
 # 从 npm 安装 / 升级（宿主 1.7 起支持来源写法）
-wellspring plugin install npm:@xyit/wellspring-core
+wellspring plugin install npm:@xyit-team/wellspring-core
 wellspring plugin update wellspring-core            # 默认走配置里的渠道
 
 # 从 GitHub Release 安装（找不到 Release 时宿主会回落源码 tarball）
@@ -41,7 +41,7 @@ wellspring plugin list --check
 "wellspring": {
     "apiVersion": 1,
     "name": "wellspring-core",
-    "npm": "@xyit/wellspring-core",
+    "npm": "@xyit-team/wellspring-core",
     "github": "xyit-team/wellspring-core"
 }
 ```
@@ -84,7 +84,7 @@ git push origin master refs/tags/v1.1.0
 - **`release.yml`**：typecheck + 测试 + 打 `wellspring-core-<version>.zip` + 生成 `SHA256SUMS`，
   挂到同名 GitHub Release。**不需要 npm**，只依赖 `GITHUB_TOKEN`；失败了可以在 Actions 页面
   用 `Run workflow` 填同一个 tag 重跑。
-- **`publish-npm.yml`**：发 `@xyit/wellspring-core@x.y.z` 到 npm。认证走 npm Trusted Publishing
+- **`publish-npm.yml`**：发 `@xyit-team/wellspring-core@x.y.z` 到 npm。认证走 npm Trusted Publishing
   （OIDC），仓库里不存 `NPM_TOKEN`；已发布过的版本自动跳过，失败了同样可以 `Run workflow` 重跑。
 
 两条工作流都会核对 tag 与 `package.json` 的 version（`v1.1.0` ↔ `1.1.0`），
@@ -92,10 +92,10 @@ git push origin master refs/tags/v1.1.0
 
 ### npm 首次发布与 Trusted Publishing
 
-trusted publisher 只能配在已经存在的包上，所以 `@xyit/wellspring-core` 第一次上架要手动发一次：
+trusted publisher 只能配在已经存在的包上，所以 `@xyit-team/wellspring-core` 第一次上架要手动发一次：
 
 ```bash
-npm login              # 用对 @xyit 有发布权限的账号
+npm login              # 用对 @xyit-team 有发布权限的账号
 npm publish --access public   # 在仓库根目录，发 package.json 里的版本
 ```
 
@@ -108,7 +108,7 @@ npm publish --access public   # 在仓库根目录，发 package.json 里的版�
 等价命令行（npm >= 11.15.0）：
 
 ```bash
-npm trust github @xyit/wellspring-core \
+npm trust github @xyit-team/wellspring-core \
   --repo xyit-team/wellspring-core \
   --file publish-npm.yml \
   --allow-publish -y

@@ -1,5 +1,5 @@
 {
-    "name": "@xyit/wellspring-core",
+    "name": "@xyit-team/wellspring-core",
     "version": "1.1.0",
     "description": "Wellspring 官方核心插件：文件读写、网页抓取、沙箱执行与技能",
     "license": "MIT",
@@ -45,7 +45,7 @@
     "wellspring": {
         "apiVersion": 1,
         "name": "wellspring-core",
-        "npm": "@xyit/wellspring-core",
+        "npm": "@xyit-team/wellspring-core",
         "github": "xyit-team/wellspring-core",
         "sandbox": {
             "profile": "plugin",

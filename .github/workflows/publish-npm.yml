@@ -1,6 +1,6 @@
 name: publish-npm
 
-# 发布到 npm：@xyit/wellspring-core@x.y.z
+# 发布到 npm：@xyit-team/wellspring-core@x.y.z
 #
 # 认证走 npm Trusted Publishing（OIDC），仓库里不存 token：
 # 在 npmjs.com 的包设置里配好 trusted publisher —— GitHub Actions、
@@ -91,7 +91,7 @@ jobs:
               run: |
                   set -euo pipefail
                   if ! npm publish --access public --provenance; then
-                    echo "发布失败。检查 npmjs.com 上 @xyit/wellspring-core 的 Trusted publishing 设置："
+                    echo "发布失败。检查 npmjs.com 上 @xyit-team/wellspring-core 的 Trusted publishing 设置："
                     echo "  仓库 xyit-team/wellspring-core、工作流 publish-npm.yml、权限 publish"
                     exit 1
                   fi
