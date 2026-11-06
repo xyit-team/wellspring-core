@@ -2,12 +2,17 @@ name: publish-npm
 
 # 发布到 npm：@xyit/wellspring-core@x.y.z
 #
-# 和 release.yml 分开：GitHub Release 只依赖 GITHUB_TOKEN，
-# npm 发布需要仓库 secret NPM_TOKEN（Automation token，带 publish 权限）。
-# 还没配 token 时这一步会跳过并留下提示，不会把 tag 流程弄红。
+# 认证走 npm Trusted Publishing（OIDC），仓库里不存 token：
+# 在 npmjs.com 的包设置里配好 trusted publisher —— GitHub Actions、
+# 仓库 xyit-team/wellspring-core、工作流 publish-npm.yml、权限 publish，
+# 工作流就能用 GitHub 的 OIDC token 换一次性发布凭证，同时生成 provenance。
+#
+# 前提：包在 npm 上已经存在（trusted publisher 只能配在已存在的包上）。
+# 首版怎么发见 README「发布」。
 on:
     push:
         tags: ["v*"]
+    # 失败重跑用：Actions 页面 Run workflow，填已有 tag
     workflow_dispatch:
         inputs:
             tag:
@@ -25,7 +30,7 @@ jobs:
         timeout-minutes: 20
         permissions:
             contents: read
-            # npm 的 provenance（可信发布）需要 OIDC
+            # Trusted Publishing 换凭证、provenance 都靠 GitHub OIDC
             id-token: write
         steps:
             - uses: actions/checkout@v7
@@ -35,26 +40,28 @@ jobs:
             - uses: actions/setup-node@v7
               with:
                   node-version: 24
-                  registry-url: https://registry.npmjs.org
 
-            - name: 检查 NPM_TOKEN 是否已配置
-              id: token
-              env:
-                  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+            - name: 检查 OIDC 是否可用
               run: |
-                  if [ -z "${NPM_TOKEN}" ]; then
-                    echo "没有配置 NPM_TOKEN，跳过 npm 发布（GitHub Release 不受影响）"
-                    echo "skip=1" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "NPM_TOKEN 已配置"
+                  set -euo pipefail
+                  if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+                    echo "没有 id-token: write 权限，拿不到 OIDC token，无法走 Trusted Publishing。"
+                    exit 1
                   fi
+                  echo "OIDC 可用"
 
-            - name: 安装依赖（严格按 lockfile）
-              if: steps.token.outputs.skip != '1'
-              run: npm ci --no-audit --no-fund
+            - name: 确认 npm 支持 Trusted Publishing（>= 11.5.1）
+              run: |
+                  set -euo pipefail
+                  required="11.5.1"
+                  current="$(npm --version)"
+                  if [ "$(printf '%s\n%s\n' "$required" "$current" | sort -V | head -n1)" != "$required" ]; then
+                    echo "npm $current 低于 $required，升级到 11.x"
+                    npm install -g "npm@^11.15.0"
+                  fi
+                  echo "node $(node -v)，npm $(npm --version)"
 
             - name: 核对标签与 package.json 的版本
-              if: steps.token.outputs.skip != '1'
               env:
                   TAG: ${{ inputs.tag || github.ref_name }}
               run: |
@@ -68,7 +75,6 @@ jobs:
 
             - name: 该版本是否已经发布
               id: exists
-              if: steps.token.outputs.skip != '1'
               run: |
                   set -euo pipefail
                   name="$(node -p "require('./package.json').name")"
@@ -80,8 +86,21 @@ jobs:
                     echo "${name}@${version} 还没发布，继续"
                   fi
 
-            - name: 发布到 npm
-              if: steps.token.outputs.skip != '1' && steps.exists.outputs.skip != '1'
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-              run: npm publish --access public --provenance
+            - name: 发布到 npm（Trusted Publishing，OIDC）
+              if: steps.exists.outputs.skip != '1'
+              run: |
+                  set -euo pipefail
+                  if ! npm publish --access public --provenance; then
+                    echo "发布失败。检查 npmjs.com 上 @xyit/wellspring-core 的 Trusted publishing 设置："
+                    echo "  仓库 xyit-team/wellspring-core、工作流 publish-npm.yml、权限 publish"
+                    exit 1
+                  fi
+
+            - name: 校验发布结果
+              if: steps.exists.outputs.skip != '1'
+              run: |
+                  set -euo pipefail
+                  name="$(node -p "require('./package.json').name")"
+                  version="$(node -p "require('./package.json').version")"
+                  published="$(npm view "${name}@${version}" version)"
+                  echo "npm 上已有 ${name}@${published}"

@@ -3,7 +3,7 @@ name: release
 # 推 v* 标签发版：把插件打成 zip 挂到同名 GitHub Release。
 # 不依赖 npm：只产出 `wellspring-core-<version>.zip` + SHA256SUMS，
 # 用户可以直接 `wellspring plugin install <zip>`，或 `plugin install github:<repo>`。
-# npm 发布在 publish-npm.yml，配好 NPM_TOKEN 后再启用。
+# npm 发布在 publish-npm.yml，走 Trusted Publishing（OIDC），不需要 token。
 on:
     push:
         tags: ["v*"]

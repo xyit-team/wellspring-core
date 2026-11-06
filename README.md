@@ -84,11 +84,37 @@ git push origin master refs/tags/v1.1.0
 - **`release.yml`**：typecheck + 测试 + 打 `wellspring-core-<version>.zip` + 生成 `SHA256SUMS`，
   挂到同名 GitHub Release。**不需要 npm**，只依赖 `GITHUB_TOKEN`；失败了可以在 Actions 页面
   用 `Run workflow` 填同一个 tag 重跑。
-- **`publish-npm.yml`**：发 `@xyit/wellspring-core@x.y.z` 到 npm。需要仓库 secret `NPM_TOKEN`
-  （Automation token）；没配就跳过并留提示，不影响 GitHub Release。
+- **`publish-npm.yml`**：发 `@xyit/wellspring-core@x.y.z` 到 npm。认证走 npm Trusted Publishing
+  （OIDC），仓库里不存 `NPM_TOKEN`；已发布过的版本自动跳过，失败了同样可以 `Run workflow` 重跑。
 
 两条工作流都会核对 tag 与 `package.json` 的 version（`v1.1.0` ↔ `1.1.0`），
 对不上直接失败，避免发出与 tag 不符的包。
+
+### npm 首次发布与 Trusted Publishing
+
+trusted publisher 只能配在已经存在的包上，所以 `@xyit/wellspring-core` 第一次上架要手动发一次：
+
+```bash
+npm login              # 用对 @xyit 有发布权限的账号
+npm publish --access public   # 在仓库根目录，发 package.json 里的版本
+```
+
+发完到 npmjs.com 的包页面 → Settings → Trusted publishing，配 GitHub Actions：
+
+- 仓库：`xyit-team/wellspring-core`
+- 工作流：`publish-npm.yml`
+- 权限：publish
+
+等价命令行（npm >= 11.15.0）：
+
+```bash
+npm trust github @xyit/wellspring-core \
+  --repo xyit-team/wellspring-core \
+  --file publish-npm.yml \
+  --allow-publish -y
+```
+
+配好后推 tag 就由工作流发布，带 provenance 证明，不需要在 GitHub 里存 token。
 
 没有 npm 时的安装方式：从 Release 下 zip 后 `wellspring plugin install ./wellspring-core-1.1.0.zip`，
 或直接 `wellspring plugin install github:xyit-team/wellspring-core`（宿主会取 Release 的 zip 资产）。
