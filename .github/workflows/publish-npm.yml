@@ -102,5 +102,15 @@ jobs:
                   set -euo pipefail
                   name="$(node -p "require('./package.json').name")"
                   version="$(node -p "require('./package.json').version")"
-                  published="$(npm view "${name}@${version}" version)"
-                  echo "npm 上已有 ${name}@${published}"
+                  # 发布成功后 packument 还要一会儿才在 registry 上可见（1.1.0 实测约 2 分钟），
+                  # 这里轮询等它出现，别把发布成功判成失败
+                  for attempt in $(seq 1 24); do
+                    if published="$(npm view "${name}@${version}" version 2>/dev/null)"; then
+                      echo "npm 上已有 ${name}@${published}（第 ${attempt} 次查询）"
+                      exit 0
+                    fi
+                    echo "第 ${attempt} 次还查不到，等 10s"
+                    sleep 10
+                  done
+                  echo "发布命令成功了，但 ${name}@${version} 一直查不到，检查 npmjs.com 上的包页面"
+                  exit 1
