@@ -74,13 +74,24 @@ npm run build:zip    # 产出 release/wellspring-core-<version>.zip
 
 ```bash
 # 1) 改 package.json 的 version，提交
-# 2) 打同名 tag 并推送，CI 会 typecheck + 测试 + npm publish + 建 Release
+# 2) 打同名 tag 并推送
 git tag -a v1.1.0 -m "v1.1.0"
 git push origin master refs/tags/v1.1.0
 ```
 
-CI 里 tag 必须与 `package.json` 的 version 一致（`v1.1.0` ↔ `1.1.0`），
-否则直接失败，避免发出与 tag 不符的包。npm 发布需要仓库 secret `NPM_TOKEN`。
+推 `v*` 标签会触发两条独立的工作流：
+
+- **`release.yml`**：typecheck + 测试 + 打 `wellspring-core-<version>.zip` + 生成 `SHA256SUMS`，
+  挂到同名 GitHub Release。**不需要 npm**，只依赖 `GITHUB_TOKEN`；失败了可以在 Actions 页面
+  用 `Run workflow` 填同一个 tag 重跑。
+- **`publish-npm.yml`**：发 `@xyit/wellspring-core@x.y.z` 到 npm。需要仓库 secret `NPM_TOKEN`
+  （Automation token）；没配就跳过并留提示，不影响 GitHub Release。
+
+两条工作流都会核对 tag 与 `package.json` 的 version（`v1.1.0` ↔ `1.1.0`），
+对不上直接失败，避免发出与 tag 不符的包。
+
+没有 npm 时的安装方式：从 Release 下 zip 后 `wellspring plugin install ./wellspring-core-1.1.0.zip`，
+或直接 `wellspring plugin install github:xyit-team/wellspring-core`（宿主会取 Release 的 zip 资产）。
 
 Agent 基础工具：`read`、`delete_file`、`execute_code`、`web_search`、`web_fetch`、`query_task`、`stop_task`，以及 SKILL 管理。
 

@@ -1,0 +1,12 @@
+ci: release 只发 GitHub Release，npm 发布拆到独立工作流
+
+现在拿不到 npm token，发版不应该被它挡住：
+
+- `release.yml`：tag 触发，typecheck + 测试 + 打 zip + SHA256SUMS + 建/更新 GitHub Release，
+  只用 `GITHUB_TOKEN`；另加 `workflow_dispatch`（填 tag）方便失败重跑
+- `publish-npm.yml`（新）：单独负责 `npm publish --access public --provenance`；
+  没配 `NPM_TOKEN` 时跳过并留提示，不影响 Release
+- README 发布章节改成两条工作流的说明，并补上「没有 npm 时怎么装」：
+  下载 Release 的 zip，或直接 `plugin install github:xyit-team/wellspring-core`
+
+验证：三条工作流 YAML 都能被解析器解析；zip 与清单内容未改。

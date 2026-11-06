@@ -1,0 +1,87 @@
+name: publish-npm
+
+# 发布到 npm：@xyit/wellspring-core@x.y.z
+#
+# 和 release.yml 分开：GitHub Release 只依赖 GITHUB_TOKEN，
+# npm 发布需要仓库 secret NPM_TOKEN（Automation token，带 publish 权限）。
+# 还没配 token 时这一步会跳过并留下提示，不会把 tag 流程弄红。
+on:
+    push:
+        tags: ["v*"]
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: 要发布的 tag（例如 v1.1.0）
+                required: true
+                type: string
+
+concurrency:
+    group: publish-npm-${{ github.ref_name || inputs.tag }}
+    cancel-in-progress: false
+
+jobs:
+    publish:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 20
+        permissions:
+            contents: read
+            # npm 的 provenance（可信发布）需要 OIDC
+            id-token: write
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  ref: ${{ inputs.tag || github.ref }}
+
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 24
+                  registry-url: https://registry.npmjs.org
+
+            - name: 检查 NPM_TOKEN 是否已配置
+              id: token
+              env:
+                  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+              run: |
+                  if [ -z "${NPM_TOKEN}" ]; then
+                    echo "没有配置 NPM_TOKEN，跳过 npm 发布（GitHub Release 不受影响）"
+                    echo "skip=1" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "NPM_TOKEN 已配置"
+                  fi
+
+            - name: 安装依赖（严格按 lockfile）
+              if: steps.token.outputs.skip != '1'
+              run: npm ci --no-audit --no-fund
+
+            - name: 核对标签与 package.json 的版本
+              if: steps.token.outputs.skip != '1'
+              env:
+                  TAG: ${{ inputs.tag || github.ref_name }}
+              run: |
+                  set -euo pipefail
+                  version="v$(node -p "require('./package.json').version")"
+                  if [ "$TAG" != "$version" ]; then
+                    echo "标签是 $TAG，但 package.json 里是 $version。"
+                    exit 1
+                  fi
+                  echo "版本对得上：$TAG"
+
+            - name: 该版本是否已经发布
+              id: exists
+              if: steps.token.outputs.skip != '1'
+              run: |
+                  set -euo pipefail
+                  name="$(node -p "require('./package.json').name")"
+                  version="$(node -p "require('./package.json').version")"
+                  if npm view "${name}@${version}" version >/dev/null 2>&1; then
+                    echo "${name}@${version} 已经发布过，跳过"
+                    echo "skip=1" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "${name}@${version} 还没发布，继续"
+                  fi
+
+            - name: 发布到 npm
+              if: steps.token.outputs.skip != '1' && steps.exists.outputs.skip != '1'
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+              run: npm publish --access public --provenance
