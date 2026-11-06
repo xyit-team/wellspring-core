@@ -75,8 +75,8 @@ npm run build:zip    # 产出 release/wellspring-core-<version>.zip
 ```bash
 # 1) 改 package.json 的 version，提交
 # 2) 打同名 tag 并推送
-git tag -a v1.1.0 -m "v1.1.0"
-git push origin master refs/tags/v1.1.0
+git tag -a v1.1.1 -m "v1.1.1"
+git push origin master refs/tags/v1.1.1
 ```
 
 推 `v*` 标签会触发两条独立的工作流：
@@ -87,7 +87,7 @@ git push origin master refs/tags/v1.1.0
 - **`publish-npm.yml`**：发 `@xyit-team/wellspring-core@x.y.z` 到 npm。认证走 npm Trusted Publishing
   （OIDC），仓库里不存 `NPM_TOKEN`；已发布过的版本自动跳过，失败了同样可以 `Run workflow` 重跑。
 
-两条工作流都会核对 tag 与 `package.json` 的 version（`v1.1.0` ↔ `1.1.0`），
+两条工作流都会核对 tag 与 `package.json` 的 version（`v1.1.1` ↔ `1.1.1`），
 对不上直接失败，避免发出与 tag 不符的包。
 
 ### npm 首次发布与 Trusted Publishing
@@ -116,7 +116,7 @@ npm trust github @xyit-team/wellspring-core \
 
 配好后推 tag 就由工作流发布，带 provenance 证明，不需要在 GitHub 里存 token。
 
-没有 npm 时的安装方式：从 Release 下 zip 后 `wellspring plugin install ./wellspring-core-1.1.0.zip`，
+没有 npm 时的安装方式：从 Release 下 zip 后 `wellspring plugin install ./wellspring-core-1.1.1.zip`，
 或直接 `wellspring plugin install github:xyit-team/wellspring-core`（宿主会取 Release 的 zip 资产）。
 
 Agent 基础工具：`read`、`delete_file`、`execute_code`、`web_search`、`web_fetch`、`query_task`、`stop_task`，以及 SKILL 管理。
