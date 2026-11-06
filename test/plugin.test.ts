@@ -22,7 +22,7 @@ import { Elog } from "../.host/src/logger/elog4js.ts"
 const POSIX_ONLY = process.platform === "win32" ? "需要 /bin/sh 与 POSIX 信号，仅 Linux/macOS" : false
 
 /** 插件发布时包含的文件（与 package.json 的 files 一致） */
-const PLUGIN_FILES = ["package.json", "index.ts", "render.ts", "retention.ts", "session-prompt.ts", "skills.ts", "trash.ts", "update.ts", "migrate.ts"]
+const PLUGIN_FILES = ["package.json", "index.ts", "render.ts", "retention.ts", "session-prompt.ts", "skills.ts", "trash.ts"]
 
 let root = ""
 

@@ -14,9 +14,7 @@ import { renderExec, renderFetch, renderReadWindow, renderSearch, renderStop, re
 import { LIMITS } from "./retention.ts"
 import { buildSessionSystemPrompt } from "./session-prompt.ts"
 import { registerSkillTools } from "./skills.ts"
-import { fetchLatestRelease } from "./update.ts"
 import { moveToTrash, trashRoot } from "./trash.ts"
-import { createMigrateCommand } from "./migrate.ts"
 
 /** 二进制取样的字符数：只看开头，不额外读文件 */
 const BINARY_SAMPLE_CHARS = 8000
@@ -389,9 +387,9 @@ function tool(
 export function setup() {
     let api: PluginApi | null = null
     return {
-        id: "@xyit/wellspring-core",
+        id: "wellspring-core",
         name: "Wellspring Core",
-        version: "1.0.0",
+        version: "1.1.0",
         status: "ok" as const,
         init(pluginApi: PluginApi) {
             api = pluginApi
@@ -400,9 +398,6 @@ export function setup() {
                 event.prompt.push(buildSessionSystemPrompt(event, getHost().getOS()))
             })
             registerSkillTools(api)
-            // 从旧 id（无 scope 的 wellspring-core）升级上来时，把数据搬过来
-            api.registerCommand(createMigrateCommand(api))
-            api.registerVersionProbe?.(fetchLatestRelease)
             api.registerAgentTool?.(
                 tool(
                     "read",

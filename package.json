@@ -1,6 +1,6 @@
 {
     "name": "@xyit/wellspring-core",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Wellspring 官方核心插件：文件读写、网页抓取、沙箱执行与技能",
     "license": "MIT",
     "type": "module",
@@ -26,8 +26,6 @@
         "session-prompt.ts",
         "skills.ts",
         "trash.ts",
-        "update.ts",
-        "migrate.ts",
         "README.md",
         "LICENSE"
     ],
@@ -40,12 +38,15 @@
     },
     "devDependencies": {
         "@types/node": "^26.6.5",
-        "@xyit/wellspring": "^1.5.3",
+        "@xyit/wellspring": "^1.7.1",
         "pino": "^10.4.0",
         "typescript": "^7.0.2"
     },
     "wellspring": {
         "apiVersion": 1,
+        "name": "wellspring-core",
+        "npm": "@xyit/wellspring-core",
+        "github": "xyit-team/wellspring-core",
         "sandbox": {
             "profile": "plugin",
             "fs": {
@@ -62,10 +63,8 @@
                 "logger",
                 "fs",
                 "capabilities",
-                "getHost",
-                "migrate"
-            ],
-            "network": true
+                "getHost"
+            ]
         }
     }
 }

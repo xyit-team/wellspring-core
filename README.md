@@ -3,72 +3,53 @@
 Wellspring 官方核心插件：`read` / `delete_file` / `execute_code` / `web_search` / `web_fetch` /
 `query_task` / `stop_task` 等 Agent 基础工具，外加 SKILL 管理与会话环境注入。
 
-从主仓库独立出来后，插件按自己的节奏发版：npm 上是 `@xyit/wellspring-core@x.y.z`，
-GitHub Release 里附可直接安装的 `wellspring-core-x.y.z.zip`。
+插件独立发版：npm 上是 `@xyit/wellspring-core@x.y.z`，GitHub Release 里附
+可直接安装的 `wellspring-core-x.y.z.zip`。
 
 ## 安装与升级
 
 ```bash
-# 从源码目录（开发时）
+# 从 npm 安装 / 升级（宿主 1.7 起支持来源写法）
+wellspring plugin install npm:@xyit/wellspring-core
+wellspring plugin update wellspring-core            # 默认走配置里的渠道
+
+# 从 GitHub Release 安装（找不到 Release 时宿主会回落源码 tarball）
+wellspring plugin install github:xyit-team/wellspring-core
+
+# 本地开发
 wellspring plugin link ./wellspring-core
 
-# 从 GitHub Release 的 zip 安装 / 升级
-wellspring plugin install ./wellspring-core-1.0.0.zip
-wellspring plugin update ./wellspring-core-1.0.0.zip
-
-# 也可以用 npm 打出来的 tgz（`npm pack` 的产物）
-wellspring plugin install ./xyit-wellspring-core-1.0.0.tgz
-
-# 看有没有新版本（插件自带版本探针，查 npm registry）
+# 看有没有新版本（宿主按清单声明的来源查询）
 wellspring plugin list --check
 ```
 
-插件 id 是 `@xyit/wellspring-core`（带 scope），目录按 npm 惯例嵌套：
+本地名是 `wellspring-core`（清单里的 `wellspring.name`），所以目录是单层的，与 npm scope 无关：
 
 ```text
-<dataDir>/plugins/@xyit/wellspring-core/
-<dataDir>/plugin-data/@xyit/wellspring-core/
-<configDir>/plugins/@xyit/wellspring-core.json
+<dataDir>/plugins/wellspring-core/
+<dataDir>/plugin-data/wellspring-core/
+<configDir>/plugins/wellspring-core.json
 ```
 
-## 从旧版升级：`wellspring core-migrate`
+从旧的、内置在宿主仓库里的版本升上来时目录完全一致，回收站与技能不用搬。
 
-插件 id 从 `wellspring-core` 变成 `@xyit/wellspring-core`，数据目录也跟着变。
-新插件注册了一个命令，把旧 id 的数据一次搬过来（回收站、技能、插件配置），
-并清掉旧 id 的禁用标记（新 id 保持启用）：
+## 更新来源
 
-```bash
-# 先装新版，再迁移
-wellspring plugin install ./wellspring-core-1.0.0.zip
-wellspring core-migrate
+清单里声明了两个来源，宿主据此查最新版本（插件自己不再注册探针、也不需要联网权限）：
 
-# 顺带删掉旧插件目录（旧 id 已经不再需要）
-wellspring core-migrate --remove-old
-# 新 id 已经有数据、确认要覆盖时
-wellspring core-migrate --force
-# 脚本里用：只输出 JSON
-wellspring core-migrate --json
+```json
+"wellspring": {
+    "apiVersion": 1,
+    "name": "wellspring-core",
+    "npm": "@xyit/wellspring-core",
+    "github": "xyit-team/wellspring-core"
+}
 ```
 
-- 幂等：再跑一次只会提示「旧数据不存在」，不会重复搬或覆盖新数据
-- 默认不动旧插件目录，只打印后续命令；`--remove-old` 才会删（删不掉时提示先 `wellspring stop`）
-- 新 id 的数据目录里已经有真实内容时默认拒绝，避免把两边的技能/回收站搅在一起
-- 迁移完成后重启生效：`wellspring stop && wellspring start`；旧插件目录留着的话用
-  `wellspring plugin remove wellspring-core` 删掉
-
-命令需要宿主支持 `hostApi: migrate`（wellspring ≥ 1.6.0）；更早的宿主会提示升级，
-也可以手动把 `plugin-data/wellspring-core/` 改名成 `plugin-data/@xyit/wellspring-core/`。
-
-## 自动检查更新
-
-`init` 里注册了版本探针（`update.ts`）：查 `registry.npmjs.org` 的 `latest`，返回最新版本与
-对应 GitHub Release 的 zip 地址，宿主在 `wellspring plugin list --check` 时调用。
-
-探针要访问网络，所以清单里声明了 `sandbox.network: true`——sandbox 默认断网
-（bwrap 不 `--share-net`、seatbelt 拒绝出网），不声明的话探针必然失败。
-Windows / Node permission 后端本来就不隔离网络，这个字段只是声明意图。
-
-网络不可达、registry 报错都只记为这一项的失败，不影响插件加载与其它插件。
+- `wellspring plugin list --check`：npm 有新版就报「可更新（npm）：1.1.0 → 1.1.1」
+- `wellspring plugin update wellspring-core`：按配置 `plugins.update.type` 选择渠道（默认 npm）
+- GitHub 渠道优先取 Release 的 zip 资产，没有资产时回落 `codeload` 源码 tarball
+- 更新前先 `wellspring stop`：宿主在服务运行中会拒绝更新
 
 ## 开发
 
@@ -94,11 +75,11 @@ npm run build:zip    # 产出 release/wellspring-core-<version>.zip
 ```bash
 # 1) 改 package.json 的 version，提交
 # 2) 打同名 tag 并推送，CI 会 typecheck + 测试 + npm publish + 建 Release
-git tag -a v1.0.0 -m "v1.0.0"
-git push origin master refs/tags/v1.0.0
+git tag -a v1.1.0 -m "v1.1.0"
+git push origin master refs/tags/v1.1.0
 ```
 
-CI 里 tag 必须与 `package.json` 的 version 一致（`v1.0.0` ↔ `1.0.0`），
+CI 里 tag 必须与 `package.json` 的 version 一致（`v1.1.0` ↔ `1.1.0`），
 否则直接失败，避免发出与 tag 不符的包。npm 发布需要仓库 secret `NPM_TOKEN`。
 
 Agent 基础工具：`read`、`delete_file`、`execute_code`、`web_search`、`web_fetch`、`query_task`、`stop_task`，以及 SKILL 管理。
@@ -122,7 +103,7 @@ Agent 基础工具：`read`、`delete_file`、`execute_code`、`web_search`、`w
 回收站放在插件数据目录，保留原相对路径，便于原样移回：
 
 ```text
-<dataDir>/plugin-data/@xyit/wellspring-core/trash/
+<dataDir>/plugin-data/wellspring-core/trash/
   20261025-102530-1a2b3c/
     meta.json                 # at / path / type / files / bytes
     files/.tmp/old.txt        # 原文件按原相对路径存放
@@ -160,7 +141,7 @@ metadata:
 - `disable-model-invocation: true` / `user-invocable: false`：保留通用规范里的调用控制字段
 - 其余 frontmatter 字段原样保留
 
-技能保存在插件数据目录：`<dataDir>/plugin-data/@xyit/wellspring-core/skills/<name>/`。
+技能保存在插件数据目录：`<dataDir>/plugin-data/wellspring-core/skills/<name>/`。
 
 ### 工具
 

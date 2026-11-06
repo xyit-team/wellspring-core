@@ -37,4 +37,3 @@ jobs:
                   cat /tmp/zip.txt
                   grep -qx 'package.json' /tmp/zip.txt
                   grep -qx 'index.ts' /tmp/zip.txt
-                  grep -qx 'update.ts' /tmp/zip.txt
