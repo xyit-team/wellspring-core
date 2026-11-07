@@ -1,84 +1,23 @@
-// 核心 Agent 工具插件：read / delete_file（移入回收站）/ execute_code / web_search / web_fetch / SKILL 管理
-
-import { isAbsolute, relative, resolve, sep } from "node:path"
+// 核心 Agent 工具插件：read / write / edit / delete_file（移入回收站）/ grep / glob /
+// execute_code / web_search / web_fetch / 后台任务 / SKILL 管理
 
 import {
     getHost,
     onSessionStart,
-    type AgentTool,
-    type AgentToolParamSpec,
     type PluginApi,
 } from "wellspring/api/host/index.ts"
 
+import { registerFileTools } from "./fs-tools.ts"
+import { describePath, missingFile, workspacePath } from "./paths.ts"
+import { markRead } from "./read-tracking.ts"
 import { renderExec, renderFetch, renderReadWindow, renderSearch, renderStop, renderTask } from "./render.ts"
 import { LIMITS } from "./retention.ts"
+import { registerSearchTools } from "./search-tools.ts"
 import { buildSessionSystemPrompt } from "./session-prompt.ts"
 import { registerSkillTools } from "./skills.ts"
+import { looksBinary } from "./text.ts"
+import { tool } from "./tool.ts"
 import { moveToTrash, trashRoot } from "./trash.ts"
-
-/** 二进制取样的字符数：只看开头，不额外读文件 */
-const BINARY_SAMPLE_CHARS = 8000
-
-function isObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-/** 去掉路径两侧的成对引号 */
-function unquote(value: string): string {
-    const match = /^(["'`])([\s\S]*)\1$/.exec(value)
-    return match === null ? value : (match[2] ?? "").trim()
-}
-
-/** 工作区根目录；宿主还没同步过来时为空串 */
-function workspaceRoot(api: PluginApi): string {
-    const root = api.workspaceFs.root
-    return typeof root === "string" && isAbsolute(root) ? root : ""
-}
-
-/** 错误提示中的绝对路径 */
-function describePath(api: PluginApi, path: string): string {
-    const root = workspaceRoot(api)
-    return root === "" ? path : resolve(root, path)
-}
-
-/**
- * 工作区内路径归一化
- *
- * 相对路径原样交给宿主，`..` 越界由 HostFileApi 拒绝
- * 绝对路径落在工作区内时换成相对路径，工作区外抛出错误
- * 工作区根由会话决定，插件只做换写，不做判定
- */
-function workspacePath(api: PluginApi, args: Record<string, unknown>, key: string): string {
-    const raw = typeof args[key] === "string" ? String(args[key]).trim() : ""
-    const value = unquote(raw)
-    if (value === "") {
-        throw new Error(`${key} 不能为空`)
-    }
-    if (!isAbsolute(value)) {
-        return value
-    }
-    const root = workspaceRoot(api)
-    if (root === "") {
-        return value
-    }
-    const target = resolve(value)
-    const rel = relative(root, target)
-    if (rel === "") {
-        return "."
-    }
-    if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-        throw new Error(`路径不在工作区内：${target}\n工作区根目录：${root}`)
-    }
-    return rel.split(sep).join("/")
-}
-
-function missingFile(path: string, api: PluginApi): string {
-    const root = workspaceRoot(api)
-    if (root === "") {
-        return `文件不存在：${path}`
-    }
-    return `文件不存在：${describePath(api, path)}\n工作区根目录：${root}`
-}
 
 /**
  * 解析读取目标
@@ -89,14 +28,19 @@ async function resolveReadTarget(
     api: PluginApi,
     args: Record<string, unknown>,
 ): Promise<
-    | { ok: true; path: string; display: string }
+    | {
+          ok: true
+          path: string
+          display: string
+          signature: { readonly size: number; readonly mtimeMs: number }
+      }
     | { ok: false; data: Record<string, unknown> }
 > {
-    const path = workspacePath(api, args, "file_path")
+    const path = await workspacePath(api, args, "file_path")
     const display = describePath(api, path)
     const info = await api.workspaceFs.stat(path)
     if (info === null) {
-        return { ok: false, data: { error: missingFile(path, api), code: "FS_NOT_FOUND" } }
+        return { ok: false, data: { error: missingFile(api, path), code: "FS_NOT_FOUND" } }
     }
     if (info.type === "directory") {
         return {
@@ -116,29 +60,7 @@ async function resolveReadTarget(
             },
         }
     }
-    return { ok: true, path, display }
-}
-
-/**
- * 二进制判定：取样中出现 NUL，或替换字符占比超过一成
- *
- * 判定只看解码后文本的开头，不额外读文件
- */
-function looksBinary(text: string): boolean {
-    const sample = text.slice(0, BINARY_SAMPLE_CHARS)
-    if (sample === "") {
-        return false
-    }
-    if (sample.includes("\u0000")) {
-        return true
-    }
-    let replaced = 0
-    for (const char of sample) {
-        if (char === "\ufffd") {
-            replaced += 1
-        }
-    }
-    return replaced / sample.length > 0.1
+    return { ok: true, path, display, signature: { size: info.size, mtimeMs: info.mtimeMs } }
 }
 
 /**
@@ -192,7 +114,7 @@ async function readTool(
     const text = await api.workspaceFs.readText(target.path)
     if (text === null) {
         // stat 与读取之间文件被删除
-        return { success: false, data: { error: missingFile(target.path, api), code: "FS_NOT_FOUND" } }
+        return { success: false, data: { error: missingFile(api, target.path), code: "FS_NOT_FOUND" } }
     }
     if (looksBinary(text)) {
         return {
@@ -212,11 +134,13 @@ async function readTool(
         return { success: false, data: window.data }
     }
     const page = renderReadWindow(lines, window.start, window.limit)
+    // 记录已读签名：write 覆盖前校验
+    markRead(target.display, target.signature)
     return { success: true, data: { content: page.content, path: target.display } }
 }
 
-function deletePathOf(api: PluginApi, args: Record<string, unknown>): string {
-    const path = workspacePath(api, args, "path")
+async function deletePathOf(api: PluginApi, args: Record<string, unknown>): Promise<string> {
+    const path = await workspacePath(api, args, "path")
     const normalized = path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "")
     if (normalized === "" || normalized === "." || normalized.split("/").includes("..")) {
         throw new Error("不能删除工作区根目录，路径也不能包含 ..")
@@ -228,7 +152,7 @@ async function deleteFileTool(
     api: PluginApi,
     args: Record<string, unknown>,
 ): Promise<{ success: boolean; data: Record<string, unknown> }> {
-    const filePath = deletePathOf(api, args)
+    const filePath = await deletePathOf(api, args)
     const recursive = args["recursive"] === true || args["recursive"] === "true"
     const info = await api.workspaceFs.stat(filePath)
     if (info === null) {
@@ -355,35 +279,6 @@ async function callCapability(
     }
 }
 
-/**
- * 注册一个工具
- *
- * render 把 data 渲染成模型侧文本；给出后 data 仅用于界面与日志
- * 未给出时沿用宿主旧规则（data.content 或序列化）
- */
-function tool(
-    name: string,
-    content: string,
-    params: Record<string, AgentToolParamSpec>,
-    call: (
-        args: Record<string, unknown>,
-    ) => Promise<{ success: boolean; data: Record<string, unknown> }>,
-    render?: (data: Record<string, unknown>) => string,
-): AgentTool {
-    return {
-        name,
-        introduction: { params, content },
-        call: async (...values: unknown[]) => {
-            const input = isObject(values[0]) ? values[0] : {}
-            const result = await call(input)
-            if (render === undefined) {
-                return result
-            }
-            return { success: result.success, data: result.data, content: render(result.data) }
-        },
-    }
-}
-
 export function setup() {
     let api: PluginApi | null = null
     return {
@@ -397,7 +292,6 @@ export function setup() {
             onSessionStart((event) => {
                 event.prompt.push(buildSessionSystemPrompt(event, getHost().getOS()))
             })
-            registerSkillTools(api)
             api.registerAgentTool?.(
                 tool(
                     "read",
@@ -410,6 +304,8 @@ export function setup() {
                     async (args) => await readTool(api as PluginApi, args),
                 ),
             )
+            // 文件读写：write / edit
+            registerFileTools(api)
             api.registerAgentTool?.(
                 tool(
                     "delete_file",
@@ -425,6 +321,8 @@ export function setup() {
                     async (args) => await deleteFileTool(api as PluginApi, args),
                 ),
             )
+            // 工作区检索：grep / glob
+            registerSearchTools(api)
             api.registerAgentTool?.(
                 tool(
                     "web_search",
@@ -524,6 +422,7 @@ export function setup() {
                     renderExec,
                 ),
             )
+            registerSkillTools(api as PluginApi)
         },
     }
 }

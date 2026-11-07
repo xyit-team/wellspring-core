@@ -16,12 +16,10 @@ import { AgentToolRegistry } from "../.host/src/plugin/agent-tools.ts"
 import { loadPlugins } from "../.host/src/plugin/loader.ts"
 import { PluginRegistry } from "../.host/src/plugin/registry.ts"
 import { shutdownAllSandboxPlugins } from "../.host/src/sandbox/plugin-client.ts"
+import { PLUGIN_FILES } from "./plugin-files.ts"
 
 /** Windows 上没有 /bin/sh 与 POSIX 信号；这些用例只在 Linux/macOS 上跑 */
 const POSIX_ONLY = process.platform === "win32" ? "需要 /bin/sh 与 POSIX 信号，仅 Linux/macOS" : false
-
-/** 插件发布时包含的文件（与 package.json 的 files 一致） */
-const PLUGIN_FILES = ["package.json", "index.ts", "render.ts", "retention.ts", "session-prompt.ts", "skills.ts", "trash.ts"]
 
 let root = ""
 let dataDir = ""

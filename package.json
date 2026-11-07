@@ -21,10 +21,16 @@
     ],
     "files": [
         "index.ts",
+        "fs-tools.ts",
+        "paths.ts",
+        "read-tracking.ts",
         "render.ts",
         "retention.ts",
+        "search-tools.ts",
         "session-prompt.ts",
         "skills.ts",
+        "text.ts",
+        "tool.ts",
         "trash.ts",
         "README.md",
         "LICENSE"

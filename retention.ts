@@ -106,4 +106,20 @@ export const LIMITS = {
     searchResults: 10,
     /** web_search 单条摘要字符数 */
     searchSnippetChars: 300,
+    /** grep 最多返回的命中行数 */
+    grepMatches: 250,
+    /** grep 单行字符数 */
+    grepLineChars: 300,
+    /** grep 最多扫描的文件数 */
+    grepFiles: 5_000,
+    /** grep 跳过超过该字节数的文件 */
+    grepFileBytes: 2 * 1024 * 1024,
+    /** glob 最多返回的路径条数 */
+    globPaths: 100,
+    /** 目录遍历的最大深度 */
+    walkDepth: 16,
+    /** 目录遍历最多访问的目录数 */
+    walkDirs: 4_000,
+    /** 目录遍历最多看到的文件数 */
+    walkFiles: 20_000,
 } as const

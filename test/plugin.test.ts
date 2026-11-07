@@ -17,12 +17,10 @@ import { loadPlugins } from "../.host/src/plugin/loader.ts"
 import { shutdownAllSandboxPlugins } from "../.host/src/sandbox/plugin-client.ts"
 import { PluginRegistry } from "../.host/src/plugin/registry.ts"
 import { Elog } from "../.host/src/logger/elog4js.ts"
+import { PLUGIN_FILES } from "./plugin-files.ts"
 
 /** Windows 上没有 /bin/sh 与 POSIX 信号；这些用例只在 Linux/macOS 上跑 */
 const POSIX_ONLY = process.platform === "win32" ? "需要 /bin/sh 与 POSIX 信号，仅 Linux/macOS" : false
-
-/** 插件发布时包含的文件（与 package.json 的 files 一致） */
-const PLUGIN_FILES = ["package.json", "index.ts", "render.ts", "retention.ts", "session-prompt.ts", "skills.ts", "trash.ts"]
 
 let root = ""
 
@@ -79,7 +77,10 @@ test("@xyit-team/wellspring-core 注册全部 Agent 工具", { timeout: 20_000, 
             .sort(),
         [
             "delete_file",
+            "edit",
             "execute_code",
+            "glob",
+            "grep",
             "query_task",
             "read",
             "skill_install",
@@ -89,6 +90,7 @@ test("@xyit-team/wellspring-core 注册全部 Agent 工具", { timeout: 20_000, 
             "stop_task",
             "web_fetch",
             "web_search",
+            "write",
         ],
     )
 

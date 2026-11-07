@@ -1,7 +1,8 @@
 # @xyit-team/wellspring-core
 
-Wellspring 官方核心插件：`read` / `delete_file` / `execute_code` / `web_search` / `web_fetch` /
-`query_task` / `stop_task` 等 Agent 基础工具，外加 SKILL 管理与会话环境注入。
+Wellspring 官方核心插件：`read` / `write` / `edit` / `delete_file` / `grep` / `glob` /
+`execute_code` / `web_search` / `web_fetch` / `query_task` / `stop_task` 等 Agent 基础工具，
+外加 SKILL 管理与会话环境注入。
 
 插件独立发版：npm 上是 `@xyit-team/wellspring-core@x.y.z`，GitHub Release 里附
 可直接安装的 `wellspring-core-x.y.z.zip`。
@@ -63,10 +64,10 @@ npm run build:zip    # 产出 release/wellspring-core-<version>.zip
 测试分两类：
 
 - `test/render.test.ts` / `retention.test.ts` / `session-prompt.test.ts`：纯函数，进 typecheck
-- `test/plugin.test.ts` / `test/tools.test.ts`：起真实宿主 loader 加载本插件跑工具。宿主的内部模块
-  没法用包名引（`exports` 只放了 `.` 与 `./api/host`），Node 又不允许剥离 `node_modules` 下的 `.ts`，
-  所以 `pretest` 会把宿主包的 `src/` 复制到 `.host/`，测试按 `../.host/src/**` 引；
-  这两份**只跑运行时、不进 typecheck**
+- `test/plugin.test.ts` / `tools.test.ts` / `fs-tools.test.ts` / `search-tools.test.ts`：起真实宿主 loader
+  加载本插件跑工具。宿主的内部模块没法用包名引（`exports` 只放了 `.` 与 `./api/host`），
+  Node 又不允许剥离 `node_modules` 下的 `.ts`，所以 `pretest` 会把宿主包的 `src/` 复制到 `.host/`，
+  测试按 `../.host/src/**` 引；这两份**只跑运行时、不进 typecheck**
 
 需要 `/bin/sh` 与 POSIX 信号的用例在 Windows 上自动跳过（`POSIX_ONLY`），CI 是 Linux，跑全量。
 
@@ -119,7 +120,8 @@ npm trust github @xyit-team/wellspring-core \
 没有 npm 时的安装方式：从 Release 下 zip 后 `wellspring plugin install ./wellspring-core-1.1.1.zip`，
 或直接 `wellspring plugin install github:xyit-team/wellspring-core`（宿主会取 Release 的 zip 资产）。
 
-Agent 基础工具：`read`、`delete_file`、`execute_code`、`web_search`、`web_fetch`、`query_task`、`stop_task`，以及 SKILL 管理。
+Agent 基础工具：`read`、`write`、`edit`、`delete_file`、`grep`、`glob`、`execute_code`、`web_search`、
+`web_fetch`、`query_task`、`stop_task`，以及 SKILL 管理。
 
 ## 会话环境注入
 
@@ -150,6 +152,24 @@ Agent 基础工具：`read`、`delete_file`、`execute_code`、`web_search`、`w
 - 删除失败（包括 read-only 拒绝）会清掉这次复制，工作区内容与回收站都保持原样
 - 回收站最多保留最近 200 次删除，超出后从最旧的条目开始清理
 - 恢复：把 `files/` 下的条目移回工作区原路径；`meta.json` 里有原始路径与时间
+
+## write / edit
+
+- `write`：整篇覆盖写入 UTF-8 文本，父目录自动创建；目录与特殊文件拒绝；返回行数与字节数
+- `edit`：按字面量替换一段，`old_string` 默认要求唯一命中——多处命中报出首个行号，要求补上下文或传 `replace_all: true`
+- `new_string` 可以为空（即删除）；文件是 CRLF 换行而 `old_string` 用 LF 写时，单独提示换行对不上
+- `write` 覆盖已有文件前要求本进程先 `read`；读后文件被改动需重读，新建文件不受限
+- 两者都受会话沙箱权限约束：`read-only` 回合宿主直接拒绝写工作区
+
+## grep / glob
+
+- `grep`：正则搜索工作区文本，按文件分组返回行号与命中行；`path` 可以是目录或单个文件，`include` 按 glob 过滤路径，
+  `ignore_case` 忽略大小写；默认跳过 `node_modules` / `.git` / `.svn` / `.hg` 与二进制文件
+- `glob`：按模式匹配文件路径，支持 `*`、`?`、`**`、`{a,b}`；pattern 不含 `/` 时按文件名匹配任意深度，
+  含 `/` 时按相对工作区根的整条路径匹配；结果按修改时间从新到旧
+- 两者默认读工作区的 `.gitignore`（含嵌套；`path` 指向子目录时祖先规则仍生效），`include_ignored: true` 可绕过；
+  内置忽略目录始终跳过。解析支持注释、`!` 取反、结尾 `/` 只匹配目录，不支持字符类与完整转义语义
+- 两者共用一套目录遍历上限：深度 16、目录 4000、文件 20000，触顶会在结果末尾说明
 
 ## SKILL
 
@@ -215,7 +235,7 @@ metadata:
 - `web_search` 只给标题、链接、摘要（丢掉 `content` 与 `authority`）；`web_fetch` 给标题 + 正文
 - 模型侧文本进会话日志的 `tool/result.content`（回放用），结构化结果同事件的 `presentation` 字段（排查用）
 
-`read` / `skill_*` / `delete_file` 返回人读文本（`data.content`），行为不变
+`read` / `write` / `edit` / `skill_*` / `delete_file` / `grep` / `glob` 返回人读文本（`data.content`），行为不变
 
 ## 结果上限：源头有界
 
@@ -228,6 +248,8 @@ metadata:
 | `execute_code` | stdout 8000 字符、stderr 4000 字符 | 尾部（截断点对齐到整行） | 重定向到文件后再 `read` |
 | `web_fetch` | 首 80000 + 末 20000 字符 | 首尾，中间折成 `[...]` | 换更具体的页面 |
 | `web_search` | 10 条、单条摘要 300 字符 | 头部 | 换更具体的查询 |
+| `grep` | 250 行命中、单行 300 字符、5000 个文件、单文件 2 MB | 头部（按遍历顺序） | 缩小 `pattern` / `path` / `include` |
+| `glob` | 100 条路径 | 按 mtime 排序的头部 | 换更具体的 `pattern` 或 `path` |
 
 三条规则：
 
