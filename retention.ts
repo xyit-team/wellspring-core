@@ -140,4 +140,8 @@ export const LIMITS = {
     patchBytes: 256 * 1024,
     /** apply_patch 单文件最多 hunk 数 */
     patchHunks: 200,
+    /** 单路输出落盘上限 */
+    spillBytes: 4 * 1024 * 1024,
+    /** 输出落盘保留的 run 数 */
+    spillKeepRuns: 20,
 } as const

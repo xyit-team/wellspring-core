@@ -1,5 +1,5 @@
 // 核心 Agent 工具插件：read / write / edit / apply_patch / delete_file（回收站可恢复）/
-// grep / glob / list_dir / execute_code / web_search / web_fetch / 后台任务 / SKILL 管理
+// grep / glob / list_dir / execute_code / run_output / web_search / web_fetch / 后台任务 / SKILL 管理
 
 import {
     getHost,
@@ -14,9 +14,11 @@ import { describePath, missingFile, workspacePath } from "./paths.ts"
 import { markRead } from "./read-tracking.ts"
 import { renderExec, renderFetch, renderReadWindow, renderSearch, renderStop, renderTask } from "./render.ts"
 import { LIMITS } from "./retention.ts"
+import { registerRunTools } from "./run-tools.ts"
 import { registerSearchTools } from "./search-tools.ts"
 import { buildSessionSystemPrompt } from "./session-prompt.ts"
 import { registerSkillTools } from "./skills.ts"
+import { spillExecOutput } from "./spill.ts"
 import { registerTrashTools } from "./trash-tools.ts"
 import { looksBinary } from "./text.ts"
 import { tool } from "./tool.ts"
@@ -245,7 +247,15 @@ async function callCapability(
             }
             const result = await api.capabilities.executeCode(request)
             const { hostArtifactDir: _artifact, hostSandboxDir: _sandbox, ...safe } = result
-            return { success: result.exitCode === 0, data: { ...safe } }
+            const spill = await spillExecOutput(api, safe)
+            return {
+                success: result.exitCode === 0,
+                data: {
+                    ...safe,
+                    ...(spill.stdout === undefined ? {} : { stdoutSpill: spill.stdout }),
+                    ...(spill.stderr === undefined ? {} : { stderrSpill: spill.stderr }),
+                },
+            }
         }
         if (name === "query_task") {
             const taskId =
@@ -264,7 +274,18 @@ async function callCapability(
                 hostSandboxDir: _sandbox,
                 ...safeResult
             } = task.result
-            return { success: true, data: { ...task, result: safeResult } }
+            const spill = await spillExecOutput(api, safeResult, task.taskId)
+            return {
+                success: true,
+                data: {
+                    ...task,
+                    result: {
+                        ...safeResult,
+                        ...(spill.stdout === undefined ? {} : { stdoutSpill: spill.stdout }),
+                        ...(spill.stderr === undefined ? {} : { stderrSpill: spill.stderr }),
+                    },
+                },
+            }
         }
         if (name === "stop_task") {
             const taskId =
@@ -430,6 +451,7 @@ export function setup() {
                     renderExec,
                 ),
             )
+            registerRunTools(api as PluginApi)
             registerSkillTools(api as PluginApi)
         },
     }

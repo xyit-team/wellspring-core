@@ -1,8 +1,8 @@
 # @xyit-team/wellspring-core
 
 Wellspring 官方核心插件：`read` / `write` / `edit` / `apply_patch` / `delete_file` /
-`grep` / `glob` / `list_dir` / `trash_list` / `trash_restore` / `execute_code` / `web_search` /
-`web_fetch` / `query_task` / `stop_task` 等 Agent 基础工具，外加 SKILL 管理与会话环境注入。
+`grep` / `glob` / `list_dir` / `trash_list` / `trash_restore` / `execute_code` / `run_output` /
+`web_search` / `web_fetch` / `query_task` / `stop_task` 等 Agent 基础工具，外加 SKILL 管理与会话环境注入。
 
 插件独立发版：npm 上是 `@xyit-team/wellspring-core@x.y.z`，GitHub Release 里附
 可直接安装的 `wellspring-core-x.y.z.zip`。
@@ -65,7 +65,7 @@ npm run build:zip    # 产出 release/wellspring-core-<version>.zip
 
 - `test/render.test.ts` / `retention.test.ts` / `session-prompt.test.ts`：纯函数，进 typecheck
 - `test/plugin.test.ts` / `tools.test.ts` / `fs-tools.test.ts` / `search-tools.test.ts` / `patch-tools.test.ts` /
-  `dir-tools.test.ts` / `trash-tools.test.ts`：起真实宿主 loader
+  `dir-tools.test.ts` / `trash-tools.test.ts` / `run-tools.test.ts`：起真实宿主 loader
   加载本插件跑工具。宿主的内部模块没法用包名引（`exports` 只放了 `.` 与 `./api/host`），
   Node 又不允许剥离 `node_modules` 下的 `.ts`，所以 `pretest` 会把宿主包的 `src/` 复制到 `.host/`，
   测试按 `../.host/src/**` 引；这两份**只跑运行时、不进 typecheck**
@@ -122,7 +122,7 @@ npm trust github @xyit-team/wellspring-core \
 或直接 `wellspring plugin install github:xyit-team/wellspring-core`（宿主会取 Release 的 zip 资产）。
 
 Agent 基础工具：`read`、`write`、`edit`、`apply_patch`、`delete_file`、`grep`、`glob`、`list_dir`、
-`trash_list`、`trash_restore`、`execute_code`、`web_search`、`web_fetch`、`query_task`、`stop_task`，
+`trash_list`、`trash_restore`、`execute_code`、`run_output`、`web_search`、`web_fetch`、`query_task`、`stop_task`，
 以及 SKILL 管理。
 
 ## 会话环境注入
@@ -258,7 +258,7 @@ metadata:
 - 模型侧文本进会话日志的 `tool/result.content`（回放用），结构化结果同事件的 `presentation` 字段（排查用）
 
 `read` / `write` / `edit` / `apply_patch` / `skill_*` / `delete_file` / `trash_*` / `grep` / `glob` /
-`list_dir` 返回人读文本（`data.content`），行为不变
+`list_dir` / `run_output` 返回人读文本（`data.content`），行为不变
 
 ## 结果上限：源头有界
 
@@ -275,6 +275,7 @@ metadata:
 | `glob` | 100 条路径 | 按 mtime 排序的头部 | 换更具体的 `pattern` 或 `path` |
 | `list_dir` | 500 条、深度 8 | 深度优先的头部 | 缩小 `path` 或 `depth` |
 | `apply_patch` | 20 文件、256 KB、单文件 200 hunk | 整单校验，失败不写 | 拆小补丁 |
+| `execute_code` 落盘 | 单路 4 MB、保留 20 个 run | 前段 | `run_output` 按 offset 翻页 |
 
 三条规则：
 
@@ -286,6 +287,15 @@ metadata:
 
 切口永不劈开 UTF-16 代理对；`retainTailLines` 还会把开头那段被裁开的半行丢掉，
 否则 `progress 1428` 会变成难读的 `8`。
+
+## 输出落盘
+
+`execute_code` / `query_task` 的单路输出超过上下文预算（stdout 8000 / stderr 4000 字符）时，完整文本写到
+`<dataDir>/plugin-data/wellspring-core/runs/<id>/stdout.txt`（或 `stderr.txt`）：
+
+- 模型侧文本的截断标记里给文件路径，`run_output file=runs/<id>/stdout.txt` 按行翻页读回
+- 单路落盘上限 4 MB（超出保留前段并注明），保留最近 20 个 run
+- 后台任务按 taskId 落盘一次，重复 `query_task` 复用已有文件
 
 ## 网络工具
 

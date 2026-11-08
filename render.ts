@@ -177,15 +177,21 @@ export function renderExec(data: Data): string {
     const stderr = retainTailLines(trimTrailing(textOf(data["stderr"])), LIMITS.execStderrChars)
     if (stdout.text !== "") parts.push(stdout.text)
     if (stderr.text !== "") parts.push("[stderr]", stderr.text)
+    const stdoutSpill = textOf(data["stdoutSpill"])
+    const stderrSpill = textOf(data["stderrSpill"])
     if (stdout.omittedChars > 0) {
+        const full =
+            stdoutSpill === ""
+                ? "全文：重定向到文件后 read"
+                : `全文：${stdoutSpill}（run_output）`
         markers.push(
-            `[stdout 截断：保留末尾 ${LIMITS.execStdoutChars} 字符，省略 ${stdout.omittedChars} 字符；` +
-                "全文：重定向到文件后 read]",
+            `[stdout 截断：保留末尾 ${LIMITS.execStdoutChars} 字符，省略 ${stdout.omittedChars} 字符；${full}]`,
         )
     }
     if (stderr.omittedChars > 0) {
+        const full = stderrSpill === "" ? "" : `；全文：${stderrSpill}（run_output）`
         markers.push(
-            `[stderr 截断：保留末尾 ${LIMITS.execStderrChars} 字符，省略 ${stderr.omittedChars} 字符]`,
+            `[stderr 截断：保留末尾 ${LIMITS.execStderrChars} 字符，省略 ${stderr.omittedChars} 字符${full}]`,
         )
     }
     markers.push(...execMarkers(data))
