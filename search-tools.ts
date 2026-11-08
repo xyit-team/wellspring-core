@@ -1,12 +1,10 @@
 // 工作区检索：grep 按正则搜文本，glob 按模式列文件
 //
-// 目录遍历、忽略目录与遍历上限共用一套，两个工具仅在匹配与整形上不同
+// 目录遍历、忽略目录与 glob 匹配来自 workspace-walk
 // 模型侧文本放在 data.content
-
 import type {
     AgentCallToolResult,
     AgentTool,
-    HostFileEntry,
     PluginApi,
 } from "wellspring/api/host/index.ts"
 
@@ -14,124 +12,12 @@ import { describePath, missingFile, workspacePath } from "./paths.ts"
 import { LIMITS } from "./retention.ts"
 import { looksBinary } from "./text.ts"
 import { tool } from "./tool.ts"
-
-// 内置忽略目录
-const IGNORED_DIRECTORIES = new Set(["node_modules", ".git", ".svn", ".hg"])
-
-// 正则元字符
-const REGEXP_SPECIAL = /[.*+?^${}()|[\]\\]/g
-
-type WalkFile = {
-    readonly path: string
-    readonly size: number
-    readonly mtimeMs: number
-}
-
-type WalkOutcome = {
-    // 深度、目录数或文件数触顶
-    readonly truncated: boolean
-}
-
-// .gitignore 规则：按出现顺序判定，后者覆盖前者
-type IgnoreRule = {
-    // 规则所在目录，相对工作区根（"." 为根）
-    readonly base: string
-    readonly expression: RegExp
-    // 以 / 结尾：只匹配目录
-    readonly directoryOnly: boolean
-    readonly negate: boolean
-}
-
-// .gitignore 解析：无效模式整行跳过
-function parseGitignore(content: string, base: string): IgnoreRule[] {
-    const rules: IgnoreRule[] = []
-    for (const raw of content.split(/\r?\n/)) {
-        const line = raw.trim()
-        if (line === "" || line.startsWith("#")) {
-            continue
-        }
-        let pattern = line
-        const negate = pattern.startsWith("!")
-        if (negate) {
-            pattern = pattern.slice(1)
-        }
-        const directoryOnly = pattern.endsWith("/")
-        if (directoryOnly) {
-            pattern = pattern.replace(/\/+$/, "")
-        }
-        const anchored = pattern.startsWith("/")
-        if (anchored) {
-            pattern = pattern.replace(/^\/+/, "")
-        }
-        pattern = pattern.replace(/\/+$/, "")
-        if (pattern === "") {
-            continue
-        }
-        try {
-            const source = globSource(pattern)
-            // 带 / 或以 / 开头的按整条相对路径匹配，其余按文件名匹配任意深度
-            const wholePath = anchored || pattern.includes("/")
-            rules.push({
-                base,
-                expression: new RegExp(wholePath ? `^${source}$` : `^(?:.*/)?${source}$`),
-                directoryOnly,
-                negate,
-            })
-        } catch {
-            // 无效模式整行跳过
-        }
-    }
-    return rules
-}
-
-// 规则目录内的相对路径，不在目录下返回 null
-function pathWithin(base: string, path: string): string | null {
-    if (base === ".") {
-        return path
-    }
-    return path.startsWith(`${base}/`) ? path.slice(base.length + 1) : null
-}
-
-// 是否命中忽略规则
-function ignoredBy(rules: readonly IgnoreRule[], path: string, directory: boolean): boolean {
-    let ignored = false
-    for (const rule of rules) {
-        if (rule.directoryOnly && !directory) {
-            continue
-        }
-        const relative = pathWithin(rule.base, path)
-        if (relative === null) {
-            continue
-        }
-        if (rule.expression.test(relative)) {
-            ignored = !rule.negate
-        }
-    }
-    return ignored
-}
-
-// 祖先目录的 .gitignore：从根到父目录，深层规则后判定
-async function ancestorGitignore(api: PluginApi, start: string): Promise<IgnoreRule[]> {
-    if (start === ".") {
-        return []
-    }
-    const directories: string[] = ["."]
-    let current = ""
-    for (const part of start.split("/")) {
-        current = current === "" ? part : `${current}/${part}`
-        if (current !== start) {
-            directories.push(current)
-        }
-    }
-    const rules: IgnoreRule[] = []
-    for (const directory of directories) {
-        const content = await api.workspaceFs.readText(joinRelative(directory, ".gitignore"))
-        if (content !== null) {
-            rules.push(...parseGitignore(content, directory))
-        }
-    }
-    return rules
-}
+import {
+    globMatcher,
+    normalizeRelative,
+    walkWorkspace,
+    type WalkFile,
+} from "./workspace-walk.ts"
 
 function fail(message: string, code: string): AgentCallToolResult {
     return { success: false, data: { error: message, code } }
@@ -146,86 +32,6 @@ function isTrue(value: unknown): boolean {
     return value === true || value === "true"
 }
 
-// 相对路径归一：统一分隔符，去掉开头 ./ 与结尾 /
-function normalizeRelative(path: string): string {
-    const unified = path.replace(/\\/g, "/").replace(/\/{2,}/g, "/")
-    const trimmed = unified.replace(/^\.\//, "").replace(/\/+$/, "")
-    return trimmed === "" ? "." : trimmed
-}
-
-function joinRelative(base: string, name: string): string {
-    return base === "." ? name : `${base}/${name}`
-}
-
-function basename(path: string): string {
-    const slash = path.lastIndexOf("/")
-    return slash < 0 ? path : path.slice(slash + 1)
-}
-
-function escapeRegExp(text: string): string {
-    return text.replace(REGEXP_SPECIAL, "\\$&")
-}
-
-// glob 转正则源码：支持 *、?、**、{a,b}；花括号内按字面量，不嵌套
-function globSource(pattern: string): string {
-    let source = ""
-    let index = 0
-    while (index < pattern.length) {
-        const char = pattern[index] ?? ""
-        if (char === "*") {
-            if (pattern[index + 1] === "*") {
-                index += 1
-                if (pattern[index + 1] === "/") {
-                    index += 1
-                    source += "(?:[^/]+/)*"
-                } else {
-                    source += ".*"
-                }
-            } else {
-                source += "[^/]*"
-            }
-            index += 1
-            continue
-        }
-        if (char === "?") {
-            source += "[^/]"
-            index += 1
-            continue
-        }
-        if (char === "{") {
-            const close = pattern.indexOf("}", index + 1)
-            if (close < 0) {
-                throw new Error("花括号未闭合：{")
-            }
-            const body = pattern.slice(index + 1, close)
-            if (body.includes("{")) {
-                throw new Error("花括号不支持嵌套")
-            }
-            const alternatives = body === "" ? [] : body.split(",")
-            if (alternatives.length === 0 || alternatives.some((item) => item === "")) {
-                throw new Error("花括号内有空选项")
-            }
-            source += `(?:${alternatives.map(escapeRegExp).join("|")})`
-            index = close + 1
-            continue
-        }
-        if (char === "}") {
-            throw new Error("多余的 }")
-        }
-        source += escapeRegExp(char)
-        index += 1
-    }
-    return source
-}
-
-// glob 匹配器：不含 / 按文件名，含 / 按整条相对路径
-function globMatcher(pattern: string): (path: string) => boolean {
-    const normalized = pattern.replace(/\\/g, "/").replace(/^\.\/+/, "")
-    const expression = new RegExp(`^${globSource(normalized)}$`)
-    const basenameOnly = !normalized.includes("/")
-    return (path) => expression.test(basenameOnly ? basename(path) : path)
-}
-
 // 搜索起点：缺省工作区根，显式给出时按相对路径归一
 async function searchStart(api: PluginApi, args: Record<string, unknown>): Promise<string> {
     const raw = args["path"]
@@ -235,90 +41,26 @@ async function searchStart(api: PluginApi, args: Record<string, unknown>): Promi
     return normalizeRelative(await workspacePath(api, args, "path"))
 }
 
-// 递归遍历：entries 按名字有序，深度/目录数/文件数触顶即停
-// visit 返回 false 时提前中止
-async function walkWorkspace(
-    api: PluginApi,
-    start: string,
-    visit: (file: WalkFile) => boolean | Promise<boolean>,
-    respectGitignore: boolean,
-): Promise<WalkOutcome> {
-    let directories = 0
-    let files = 0
-    let truncated = false
-    const walk = async (
-        directory: string,
-        depth: number,
-        inherited: readonly IgnoreRule[],
-    ): Promise<boolean> => {
-        if (directories >= LIMITS.walkDirs) {
-            truncated = true
-            return false
-        }
-        directories += 1
-        let entries: readonly HostFileEntry[]
-        try {
-            entries = await api.workspaceFs.list(directory)
-        } catch {
-            // 目录在遍历中消失或不可读：跳过
-            return true
-        }
-        let rules = inherited
-        const hasGitignore =
-            respectGitignore &&
-            entries.some((entry) => entry.name === ".gitignore" && entry.type === "file")
-        if (hasGitignore) {
-            const content = await api.workspaceFs.readText(joinRelative(directory, ".gitignore"))
-            if (content !== null) {
-                const local = parseGitignore(content, directory)
-                if (local.length > 0) {
-                    rules = [...inherited, ...local]
-                }
-            }
-        }
-        for (const entry of entries) {
-            const path = joinRelative(directory, entry.name)
-            if (entry.type === "directory") {
-                if (IGNORED_DIRECTORIES.has(entry.name)) {
-                    continue
-                }
-                if (respectGitignore && ignoredBy(rules, path, true)) {
-                    continue
-                }
-                if (depth + 1 > LIMITS.walkDepth) {
-                    truncated = true
-                    continue
-                }
-                if (!(await walk(path, depth + 1, rules))) {
-                    return false
-                }
-                continue
-            }
-            if (entry.type !== "file") {
-                continue
-            }
-            if (respectGitignore && ignoredBy(rules, path, false)) {
-                continue
-            }
-            if (files >= LIMITS.walkFiles) {
-                truncated = true
-                return false
-            }
-            files += 1
-            const file: WalkFile = {
-                path,
-                size: entry.size,
-                mtimeMs: entry.mtimeMs,
-            }
-            if (!(await visit(file))) {
-                return false
-            }
-        }
-        return true
+// 额外搜索起点：数组或单个字符串（兼容 JSON 字符串形式）
+function pathStarts(raw: unknown): string[] {
+    if (Array.isArray(raw)) {
+        return raw
+            .filter((item): item is string => typeof item === "string")
+            .map((item) => item.trim())
+            .filter((item) => item !== "")
     }
-    const rules = respectGitignore ? await ancestorGitignore(api, start) : []
-    await walk(start, 0, rules)
-    return { truncated }
+    if (typeof raw === "string" && raw.trim() !== "") {
+        const value = raw.trim()
+        if (value.startsWith("[")) {
+            try {
+                return pathStarts(JSON.parse(value) as unknown)
+            } catch {
+                return []
+            }
+        }
+        return [value]
+    }
+    return []
 }
 
 async function grepTool(
@@ -329,7 +71,7 @@ async function grepTool(
     if (pattern === "") {
         return fail("pattern 为空", "SEARCH_BAD_PATTERN")
     }
-    const ignoreCase = args["ignore_case"] === true || args["ignore_case"] === "true"
+    const ignoreCase = isTrue(args["ignore_case"])
     let expression: RegExp
     try {
         expression = new RegExp(pattern, ignoreCase ? "i" : "")
@@ -345,50 +87,112 @@ async function grepTool(
             return fail(`include 模式无效：${errorMessage(error)}`, "SEARCH_BAD_PATTERN")
         }
     }
+    const rawContext = args["context"]
+    const context = rawContext === undefined ? 0 : Number(rawContext)
+    if (!Number.isInteger(context) || context < 0 || context > LIMITS.grepContext) {
+        return fail(
+            `context 需要是 0-${LIMITS.grepContext} 的整数，收到：${String(rawContext)}`,
+            "FS_BAD_ARGUMENT",
+        )
+    }
+    const rawMax = args["max_results"]
+    const maxMatches = rawMax === undefined ? LIMITS.grepMatches : Number(rawMax)
+    if (!Number.isInteger(maxMatches) || maxMatches < 1 || maxMatches > LIMITS.grepMatches) {
+        return fail(
+            `max_results 需要是 1-${LIMITS.grepMatches} 的整数，收到：${String(rawMax)}`,
+            "FS_BAD_ARGUMENT",
+        )
+    }
+    const extras = pathStarts(args["paths"])
+    if (extras.length > LIMITS.grepPaths) {
+        return fail(
+            `paths 最多 ${LIMITS.grepPaths} 个起点，收到：${extras.length}`,
+            "FS_BAD_ARGUMENT",
+        )
+    }
     const respectGitignore = !isTrue(args["include_ignored"])
-    const start = await searchStart(api, args)
-    const info = await api.workspaceFs.stat(start)
-    if (info === null) {
-        return { success: false, data: { error: missingFile(api, start), code: "FS_NOT_FOUND" } }
+
+    const starts: string[] = []
+    const rawPath = args["path"]
+    if (typeof rawPath === "string" && rawPath.trim() !== "") {
+        starts.push(normalizeRelative(await workspacePath(api, args, "path")))
+    }
+    for (const raw of extras) {
+        starts.push(normalizeRelative(await workspacePath(api, { path: raw }, "path")))
+    }
+    if (starts.length === 0) {
+        starts.push(".")
     }
 
     const groups = new Map<string, string[]>()
+    const visited = new Set<string>()
     let matches = 0
     let scanned = 0
+    let renderedLines = 0
     let matchesTruncated = false
     let scanTruncated = false
     let walkTruncated = false
+    let outputTruncated = false
+
+    const formatLine = (body: string): string => {
+        const shown = body.trimEnd()
+        return shown.length > LIMITS.grepLineChars
+            ? `${shown.slice(0, LIMITS.grepLineChars)}…`
+            : shown
+    }
+
+    // 命中行与上下文：相邻命中合并成一段，段间用 -- 分隔
+    const renderBlock = (lines: readonly string[], matched: readonly number[]): string[] => {
+        const output: string[] = []
+        const matchedLines = new Set(matched)
+        let previousEnd = -1
+        for (const index of matched) {
+            const from = Math.max(0, index - context)
+            const to = Math.min(lines.length - 1, index + context)
+            if (context > 0 && previousEnd >= 0 && from > previousEnd + 1) {
+                output.push("  --")
+            }
+            for (let cursor = Math.max(from, previousEnd + 1); cursor <= to; cursor += 1) {
+                const body = formatLine((lines[cursor] ?? "").replace(/\r$/, ""))
+                const marker = matchedLines.has(cursor) ? ":" : "-"
+                output.push(`  ${cursor + 1}${marker} ${body}`)
+            }
+            previousEnd = Math.max(previousEnd, to)
+        }
+        return output
+    }
 
     const collect = (file: string, text: string): boolean => {
         const lines = text.split("\n")
-        const group: string[] = []
+        const matched: number[] = []
         for (let index = 0; index < lines.length; index += 1) {
             const body = (lines[index] ?? "").replace(/\r$/, "")
             if (!expression.test(body)) {
                 continue
             }
-            if (matches >= LIMITS.grepMatches) {
+            if (matches >= maxMatches) {
                 matchesTruncated = true
-                if (group.length > 0) {
-                    groups.set(file, group)
-                }
+                break
+            }
+            matched.push(index)
+            matches += 1
+        }
+        if (matched.length > 0) {
+            const block = renderBlock(lines, matched)
+            groups.set(file, block)
+            renderedLines += block.length + 1
+            if (renderedLines >= LIMITS.grepOutputLines) {
+                outputTruncated = true
                 return false
             }
-            matches += 1
-            const shown = body.trimEnd()
-            const line =
-                shown.length > LIMITS.grepLineChars
-                    ? `${shown.slice(0, LIMITS.grepLineChars)}…`
-                    : shown
-            group.push(`${index + 1}: ${line}`)
         }
-        if (group.length > 0) {
-            groups.set(file, group)
-        }
-        return true
+        return !matchesTruncated
     }
 
     const visit = async (file: WalkFile): Promise<boolean> => {
+        if (visited.has(file.path)) {
+            return true
+        }
         if (include !== null && !include(file.path)) {
             return true
         }
@@ -399,6 +203,7 @@ async function grepTool(
             scanTruncated = true
             return false
         }
+        visited.add(file.path)
         scanned += 1
         const text = await api.workspaceFs.readText(file.path)
         if (text === null) {
@@ -410,28 +215,56 @@ async function grepTool(
         return collect(file.path, text)
     }
 
-    if (info.type === "file") {
-        await visit({ path: start, size: info.size, mtimeMs: info.mtimeMs })
-    } else if (info.type === "directory") {
-        const walked = await walkWorkspace(api, start, visit, respectGitignore)
-        walkTruncated = walked.truncated
-    } else {
-        return fail(
-            `无法搜索 "${describePath(api, start)}"：不是普通文件或目录`,
-            "FS_NOT_REGULAR_FILE",
-        )
+    for (const start of starts) {
+        const info = await api.workspaceFs.stat(start)
+        if (info === null) {
+            return { success: false, data: { error: missingFile(api, start), code: "FS_NOT_FOUND" } }
+        }
+        if (info.type === "file") {
+            if (!(await visit({ path: start, size: info.size, mtimeMs: info.mtimeMs, depth: 0 }))) {
+                break
+            }
+            continue
+        }
+        if (info.type !== "directory") {
+            return fail(
+                `无法搜索 "${describePath(api, start)}"：不是普通文件或目录`,
+                "FS_NOT_REGULAR_FILE",
+            )
+        }
+        const walked = await walkWorkspace(api, start, { file: visit }, { respectGitignore })
+        walkTruncated = walkTruncated || walked.truncated
+        if (matchesTruncated || outputTruncated || scanTruncated) {
+            break
+        }
     }
 
     const contentLines: string[] = []
-    for (const [file, lines] of groups) {
+    let cut = false
+    for (const [file, block] of groups) {
+        if (contentLines.length >= LIMITS.grepOutputLines) {
+            outputTruncated = true
+            break
+        }
         contentLines.push(file)
-        for (const line of lines) {
-            contentLines.push(`  ${line}`)
+        for (const line of block) {
+            if (contentLines.length >= LIMITS.grepOutputLines) {
+                outputTruncated = true
+                cut = true
+                break
+            }
+            contentLines.push(line)
+        }
+        if (cut) {
+            break
         }
     }
     const markers: string[] = []
     if (matchesTruncated) {
-        markers.push(`[匹配数达到上限 ${LIMITS.grepMatches}，可能还有更多]`)
+        markers.push(`[匹配数达到上限 ${maxMatches}，可能还有更多]`)
+    }
+    if (outputTruncated) {
+        markers.push(`[结果行数达到上限 ${LIMITS.grepOutputLines}]`)
     }
     if (scanTruncated) {
         markers.push(`[已扫描 ${LIMITS.grepFiles} 个文件，达到上限]`)
@@ -450,7 +283,7 @@ async function grepTool(
             matches,
             files: groups.size,
             scanned,
-            truncated: matchesTruncated || scanTruncated || walkTruncated,
+            truncated: matchesTruncated || outputTruncated || scanTruncated || walkTruncated,
         },
     }
 }
@@ -483,13 +316,15 @@ async function globTool(
     const walked = await walkWorkspace(
         api,
         start,
-        (file) => {
-            if (matchesPath(file.path)) {
-                matched.push(file)
-            }
-            return true
+        {
+            file: (file) => {
+                if (matchesPath(file.path)) {
+                    matched.push(file)
+                }
+                return true
+            },
         },
-        respectGitignore,
+        { respectGitignore },
     )
     matched.sort(
         (left, right) => right.mtimeMs - left.mtimeMs || left.path.localeCompare(right.path),
@@ -522,7 +357,7 @@ function searchTools(api: PluginApi): AgentTool[] {
     return [
         tool(
             "grep",
-            "在工作区内按正则搜索文本，按文件分组返回行号与命中行；默认跳过 .gitignore 忽略的路径",
+            "在工作区内按正则搜索文本，按文件分组返回行号与命中行，可带上下文；默认跳过 .gitignore 忽略的路径",
             {
                 pattern: "正则 JS RegExp 语法，例如 foo|bar",
                 path: {
@@ -543,6 +378,22 @@ function searchTools(api: PluginApi): AgentTool[] {
                 include_ignored: {
                     type: "boolean",
                     description: "true 时连 .gitignore 忽略的路径也搜；node_modules 等内置忽略目录仍跳过",
+                    optional: true,
+                },
+                paths: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "额外搜索起点：目录或文件，可多个；与 path 一起生效",
+                    optional: true,
+                },
+                context: {
+                    type: "integer",
+                    description: `命中行前后各显示的上下文行数（0-${LIMITS.grepContext}），默认 0`,
+                    optional: true,
+                },
+                max_results: {
+                    type: "integer",
+                    description: `最多返回的命中数（1-${LIMITS.grepMatches}），默认 ${LIMITS.grepMatches}`,
                     optional: true,
                 },
             },

@@ -1,5 +1,5 @@
-// 核心 Agent 工具插件：read / write / edit / delete_file（移入回收站）/ grep / glob /
-// execute_code / web_search / web_fetch / 后台任务 / SKILL 管理
+// 核心 Agent 工具插件：read / write / edit / apply_patch / delete_file（回收站可恢复）/
+// grep / glob / list_dir / execute_code / web_search / web_fetch / 后台任务 / SKILL 管理
 
 import {
     getHost,
@@ -7,7 +7,9 @@ import {
     type PluginApi,
 } from "wellspring/api/host/index.ts"
 
+import { registerDirTools } from "./dir-tools.ts"
 import { registerFileTools } from "./fs-tools.ts"
+import { registerPatchTools } from "./patch-tools.ts"
 import { describePath, missingFile, workspacePath } from "./paths.ts"
 import { markRead } from "./read-tracking.ts"
 import { renderExec, renderFetch, renderReadWindow, renderSearch, renderStop, renderTask } from "./render.ts"
@@ -15,6 +17,7 @@ import { LIMITS } from "./retention.ts"
 import { registerSearchTools } from "./search-tools.ts"
 import { buildSessionSystemPrompt } from "./session-prompt.ts"
 import { registerSkillTools } from "./skills.ts"
+import { registerTrashTools } from "./trash-tools.ts"
 import { looksBinary } from "./text.ts"
 import { tool } from "./tool.ts"
 import { moveToTrash, trashRoot } from "./trash.ts"
@@ -169,17 +172,19 @@ async function deleteFileTool(
     }
     const moved = await moveToTrash(api, filePath, info.type)
     const label = info.type === "directory" ? "目录" : "文件"
+    const trashId = moved.entry.replace(/^trash\//, "")
     return {
         success: true,
         data: {
             path: filePath,
             type: info.type,
+            trashId,
             trashPath: moved.absolutePath,
             trashItem: moved.itemPath,
             trashRoot: trashRoot(api),
             files: moved.files,
             bytes: moved.bytes,
-            content: `已把${label}移到回收站：${filePath}（${moved.itemPath}）`,
+            content: `已把${label}移到回收站：${filePath}（trashId ${trashId}）`,
         },
     }
 }
@@ -304,8 +309,10 @@ export function setup() {
                     async (args) => await readTool(api as PluginApi, args),
                 ),
             )
-            // 文件读写：write / edit
+            // 文件读写：write / edit / apply_patch
             registerFileTools(api)
+            registerPatchTools(api)
+            registerTrashTools(api)
             api.registerAgentTool?.(
                 tool(
                     "delete_file",
@@ -321,8 +328,9 @@ export function setup() {
                     async (args) => await deleteFileTool(api as PluginApi, args),
                 ),
             )
-            // 工作区检索：grep / glob
+            // 工作区检索：grep / glob / list_dir
             registerSearchTools(api)
+            registerDirTools(api)
             api.registerAgentTool?.(
                 tool(
                     "web_search",

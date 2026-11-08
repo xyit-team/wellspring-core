@@ -349,3 +349,75 @@ test("glob 非法模式返回 GLOB_BAD_PATTERN", { timeout: 30_000 }, async () =
     assert.equal(result.data["code"], "GLOB_BAD_PATTERN")
     assert.match(String(result.data["error"]), /glob 模式无效/)
 })
+
+test("grep context 带出命中行前后文，相邻命中合并", { timeout: 30_000 }, async () => {
+    const workspace = await workspaceFor("grep-context")
+    await write(
+        workspace,
+        "src/a.ts",
+        ["line1", "line2", "foo", "line4", "line5", "bar", "line7"].join("\n") + "\n",
+    )
+
+    const result = await callTool("grep", workspace, { pattern: "foo|bar", context: 1 })
+    assert.equal(result.success, true, JSON.stringify(result.data))
+    assert.equal(result.data["matches"], 2)
+    assert.equal(
+        String(result.data["content"]),
+        [
+            "src/a.ts",
+            "  2- line2",
+            "  3: foo",
+            "  4- line4",
+            "  5- line5",
+            "  6: bar",
+            "  7- line7",
+        ].join("\n"),
+    )
+})
+
+test("grep max_results 限制命中数并说明截断", { timeout: 30_000 }, async () => {
+    const workspace = await workspaceFor("grep-max")
+    await write(workspace, "many.txt", ["needle1", "needle2", "needle3", "needle4"].join("\n") + "\n")
+
+    const result = await callTool("grep", workspace, { pattern: "needle", max_results: 2 })
+    assert.equal(result.success, true, JSON.stringify(result.data))
+    assert.equal(result.data["matches"], 2)
+    assert.equal(result.data["truncated"], true)
+    assert.match(String(result.data["content"]), /\[匹配数达到上限 2，可能还有更多\]/)
+})
+
+test("grep paths 搜多个起点并去重", { timeout: 30_000 }, async () => {
+    const workspace = await workspaceFor("grep-paths")
+    await write(workspace, "a/x.txt", "needle\n")
+    await write(workspace, "b/y.txt", "needle\n")
+    await write(workspace, "c/z.txt", "needle\n")
+
+    const result = await callTool("grep", workspace, { pattern: "needle", paths: ["a", "b"] })
+    assert.equal(result.success, true, JSON.stringify(result.data))
+    assert.equal(result.data["matches"], 2)
+    const text = String(result.data["content"])
+    assert.match(text, /a\/x\.txt/)
+    assert.match(text, /b\/y\.txt/)
+    assert.ok(!text.includes("c/z.txt"), text)
+
+    // 重复起点不重复输出
+    const deduped = await callTool("grep", workspace, {
+        pattern: "needle",
+        paths: ["a", "a/x.txt"],
+    })
+    assert.equal(deduped.data["matches"], 1)
+    assert.equal(String(deduped.data["content"]).match(/a\/x\.txt/g)?.length, 1)
+})
+
+test("grep context / max_results 参数校验", { timeout: 30_000 }, async () => {
+    const workspace = await workspaceFor("grep-context-bad")
+    await write(workspace, "a.txt", "foo\n")
+
+    const badContext = await callTool("grep", workspace, { pattern: "foo", context: 99 })
+    assert.equal(badContext.success, false)
+    assert.equal(badContext.data["code"], "FS_BAD_ARGUMENT")
+
+    const badMax = await callTool("grep", workspace, { pattern: "foo", max_results: 0 })
+    assert.equal(badMax.success, false)
+    assert.equal(badMax.data["code"], "FS_BAD_ARGUMENT")
+})

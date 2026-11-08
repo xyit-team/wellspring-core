@@ -122,4 +122,22 @@ export const LIMITS = {
     walkDirs: 4_000,
     /** 目录遍历最多看到的文件数 */
     walkFiles: 20_000,
+    /** grep 上下文行数上限 */
+    grepContext: 5,
+    /** grep 结果行数上限（含上下文） */
+    grepOutputLines: 1_500,
+    /** grep 单次搜索的起点数上限 */
+    grepPaths: 8,
+    /** list_dir 默认深度 */
+    listDepth: 2,
+    /** list_dir 最大深度 */
+    listMaxDepth: 8,
+    /** list_dir 最多列出的条目数 */
+    listEntries: 500,
+    /** apply_patch 单次最多文件数 */
+    patchFiles: 20,
+    /** apply_patch 补丁字节上限 */
+    patchBytes: 256 * 1024,
+    /** apply_patch 单文件最多 hunk 数 */
+    patchHunks: 200,
 } as const

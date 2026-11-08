@@ -21,7 +21,9 @@
     ],
     "files": [
         "index.ts",
+        "dir-tools.ts",
         "fs-tools.ts",
+        "patch-tools.ts",
         "paths.ts",
         "read-tracking.ts",
         "render.ts",
@@ -31,7 +33,9 @@
         "skills.ts",
         "text.ts",
         "tool.ts",
+        "trash-tools.ts",
         "trash.ts",
+        "workspace-walk.ts",
         "README.md",
         "LICENSE"
     ],

@@ -1,8 +1,8 @@
 # @xyit-team/wellspring-core
 
-Wellspring 官方核心插件：`read` / `write` / `edit` / `delete_file` / `grep` / `glob` /
-`execute_code` / `web_search` / `web_fetch` / `query_task` / `stop_task` 等 Agent 基础工具，
-外加 SKILL 管理与会话环境注入。
+Wellspring 官方核心插件：`read` / `write` / `edit` / `apply_patch` / `delete_file` /
+`grep` / `glob` / `list_dir` / `trash_list` / `trash_restore` / `execute_code` / `web_search` /
+`web_fetch` / `query_task` / `stop_task` 等 Agent 基础工具，外加 SKILL 管理与会话环境注入。
 
 插件独立发版：npm 上是 `@xyit-team/wellspring-core@x.y.z`，GitHub Release 里附
 可直接安装的 `wellspring-core-x.y.z.zip`。
@@ -64,7 +64,8 @@ npm run build:zip    # 产出 release/wellspring-core-<version>.zip
 测试分两类：
 
 - `test/render.test.ts` / `retention.test.ts` / `session-prompt.test.ts`：纯函数，进 typecheck
-- `test/plugin.test.ts` / `tools.test.ts` / `fs-tools.test.ts` / `search-tools.test.ts`：起真实宿主 loader
+- `test/plugin.test.ts` / `tools.test.ts` / `fs-tools.test.ts` / `search-tools.test.ts` / `patch-tools.test.ts` /
+  `dir-tools.test.ts` / `trash-tools.test.ts`：起真实宿主 loader
   加载本插件跑工具。宿主的内部模块没法用包名引（`exports` 只放了 `.` 与 `./api/host`），
   Node 又不允许剥离 `node_modules` 下的 `.ts`，所以 `pretest` 会把宿主包的 `src/` 复制到 `.host/`，
   测试按 `../.host/src/**` 引；这两份**只跑运行时、不进 typecheck**
@@ -120,8 +121,9 @@ npm trust github @xyit-team/wellspring-core \
 没有 npm 时的安装方式：从 Release 下 zip 后 `wellspring plugin install ./wellspring-core-1.2.0.zip`，
 或直接 `wellspring plugin install github:xyit-team/wellspring-core`（宿主会取 Release 的 zip 资产）。
 
-Agent 基础工具：`read`、`write`、`edit`、`delete_file`、`grep`、`glob`、`execute_code`、`web_search`、
-`web_fetch`、`query_task`、`stop_task`，以及 SKILL 管理。
+Agent 基础工具：`read`、`write`、`edit`、`apply_patch`、`delete_file`、`grep`、`glob`、`list_dir`、
+`trash_list`、`trash_restore`、`execute_code`、`web_search`、`web_fetch`、`query_task`、`stop_task`，
+以及 SKILL 管理。
 
 ## 会话环境注入
 
@@ -161,6 +163,22 @@ Agent 基础工具：`read`、`write`、`edit`、`delete_file`、`grep`、`glob`
 - `write` 覆盖已有文件前要求本进程先 `read`；读后文件被改动需重读，新建文件不受限
 - 两者都受会话沙箱权限约束：`read-only` 回合宿主直接拒绝写工作区
 
+## apply_patch
+
+按统一 diff 一次改多个文件：`---` / `+++` 文件头 + `@@` hunk，支持多文件与新建文件（`---` 为 `/dev/null`）；
+删除文件不支持，用 `delete_file`。
+
+- hunk 定位容忍行号漂移；上下文对不上时报文件与 hunk 头，整个补丁不落盘（先全部校验，再依次写入）
+- 换行沿用原文件（CRLF 文件仍是 CRLF）；新建文件用 LF
+- 上限：20 个文件、256 KB 补丁、单文件 200 hunk
+
+## 回收站
+
+`delete_file` 把条目移入 `<dataDir>/plugin-data/wellspring-core/trash/<id>/`，删除结果里带 `trashId`：
+
+- `trash_list`：按时间从新到旧列出 id、原路径、类型、文件数、大小与删除时间
+- `trash_restore`：按 id 恢复到原路径；目标已存在时拒绝
+
 ## grep / glob
 
 - `grep`：正则搜索工作区文本，按文件分组返回行号与命中行；`path` 可以是目录或单个文件，`include` 按 glob 过滤路径，
@@ -169,6 +187,10 @@ Agent 基础工具：`read`、`write`、`edit`、`delete_file`、`grep`、`glob`
   含 `/` 时按相对工作区根的整条路径匹配；结果按修改时间从新到旧
 - 两者默认读工作区的 `.gitignore`（含嵌套；`path` 指向子目录时祖先规则仍生效），`include_ignored: true` 可绕过；
   内置忽略目录始终跳过。解析支持注释、`!` 取反、结尾 `/` 只匹配目录，不支持字符类与完整转义语义
+- `grep` 支持 `context`（0-5 行上下文，命中行 `:`、上下文行 `-`、段间 `--`）、`max_results`（1-250）
+  与 `paths`（多个搜索起点，文件去重），上下文行同样受单行 300 字符限制
+- `list_dir`：缩进树列出目录内容，`depth` 1-8（默认 2）、`include_ignored` 可绕过 .gitignore，
+  条目上限 500
 - 两者共用一套目录遍历上限：深度 16、目录 4000、文件 20000，触顶会在结果末尾说明
 
 ## SKILL
@@ -235,7 +257,8 @@ metadata:
 - `web_search` 只给标题、链接、摘要（丢掉 `content` 与 `authority`）；`web_fetch` 给标题 + 正文
 - 模型侧文本进会话日志的 `tool/result.content`（回放用），结构化结果同事件的 `presentation` 字段（排查用）
 
-`read` / `write` / `edit` / `skill_*` / `delete_file` / `grep` / `glob` 返回人读文本（`data.content`），行为不变
+`read` / `write` / `edit` / `apply_patch` / `skill_*` / `delete_file` / `trash_*` / `grep` / `glob` /
+`list_dir` 返回人读文本（`data.content`），行为不变
 
 ## 结果上限：源头有界
 
@@ -248,8 +271,10 @@ metadata:
 | `execute_code` | stdout 8000 字符、stderr 4000 字符 | 尾部（截断点对齐到整行） | 重定向到文件后再 `read` |
 | `web_fetch` | 首 80000 + 末 20000 字符 | 首尾，中间折成 `[...]` | 换更具体的页面 |
 | `web_search` | 10 条、单条摘要 300 字符 | 头部 | 换更具体的查询 |
-| `grep` | 250 行命中、单行 300 字符、5000 个文件、单文件 2 MB | 头部（按遍历顺序） | 缩小 `pattern` / `path` / `include` |
+| `grep` | 250 行命中、单行 300 字符、5000 个文件、单文件 2 MB、结果行 1500（含上下文） | 头部（按遍历顺序） | 缩小 `pattern` / `path` / `include`，或调小 `context` / `max_results` |
 | `glob` | 100 条路径 | 按 mtime 排序的头部 | 换更具体的 `pattern` 或 `path` |
+| `list_dir` | 500 条、深度 8 | 深度优先的头部 | 缩小 `path` 或 `depth` |
+| `apply_patch` | 20 文件、256 KB、单文件 200 hunk | 整单校验，失败不写 | 拆小补丁 |
 
 三条规则：
 
