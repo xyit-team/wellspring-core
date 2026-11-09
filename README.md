@@ -1,17 +1,17 @@
-# @xyit-team/wellspring-core
+# @xyit/wellspring-core
 
 Wellspring 官方核心插件：`read` / `write` / `edit` / `apply_patch` / `delete_file` /
 `grep` / `glob` / `list_dir` / `trash_list` / `trash_restore` / `execute_code` / `run_output` /
 `web_search` / `web_fetch` / `query_task` / `stop_task` 等 Agent 基础工具，外加 SKILL 管理与会话环境注入。
 
-插件独立发版：npm 上是 `@xyit-team/wellspring-core@x.y.z`，GitHub Release 里附
+插件独立发版：npm 上是 `@xyit/wellspring-core@x.y.z`，GitHub Release 里附
 可直接安装的 `wellspring-core-x.y.z.zip`。
 
 ## 安装与升级
 
 ```bash
 # 从 npm 安装 / 升级（宿主 1.7 起支持来源写法）
-wellspring plugin install npm:@xyit-team/wellspring-core
+wellspring plugin install npm:@xyit/wellspring-core
 wellspring plugin update wellspring-core            # 默认走配置里的渠道
 
 # 从 GitHub Release 安装（找不到 Release 时宿主会回落源码 tarball）
@@ -34,6 +34,9 @@ wellspring plugin list --check
 
 从旧的、内置在宿主仓库里的版本升上来时目录完全一致，回收站与技能不用搬。
 
+包名从 `@xyit-team/wellspring-core` 改成 `@xyit/wellspring-core` 后，插件 id 变了，数据目录也跟着变：
+`<dataDir>/plugin-data/xyit/wellspring-core/`。旧目录里的回收站与技能要手工搬过去。
+
 ## 更新来源
 
 清单里声明了两个来源，宿主据此查最新版本（插件自己不再注册探针、也不需要联网权限）：
@@ -42,12 +45,12 @@ wellspring plugin list --check
 "wellspring": {
     "apiVersion": 1,
     "name": "wellspring-core",
-    "npm": "@xyit-team/wellspring-core",
+    "npm": "@xyit/wellspring-core",
     "github": "xyit-team/wellspring-core"
 }
 ```
 
-- `wellspring plugin list --check`：npm 有新版就报「可更新（npm）：1.2.0 → 1.3.0」
+- `wellspring plugin list --check`：npm 有新版就报「可更新（npm）：1.3.0 → 1.3.1」
 - `wellspring plugin update wellspring-core`：按配置 `plugins.update.type` 选择渠道（默认 npm）
 - GitHub 渠道优先取 Release 的 zip 资产，没有资产时回落 `codeload` 源码 tarball
 - 更新前先 `wellspring stop`：宿主在服务运行中会拒绝更新
@@ -77,8 +80,8 @@ npm run build:zip    # 产出 release/wellspring-core-<version>.zip
 ```bash
 # 1) 改 package.json 的 version，提交
 # 2) 打同名 tag 并推送
-git tag -a v1.3.0 -m "v1.3.0"
-git push origin master refs/tags/v1.3.0
+git tag -a v1.3.1 -m "v1.3.1"
+git push origin master refs/tags/v1.3.1
 ```
 
 推 `v*` 标签会触发两条独立的工作流：
@@ -86,18 +89,18 @@ git push origin master refs/tags/v1.3.0
 - **`release.yml`**：typecheck + 测试 + 打 `wellspring-core-<version>.zip` + 生成 `SHA256SUMS`，
   挂到同名 GitHub Release。**不需要 npm**，只依赖 `GITHUB_TOKEN`；失败了可以在 Actions 页面
   用 `Run workflow` 填同一个 tag 重跑。
-- **`publish-npm.yml`**：发 `@xyit-team/wellspring-core@x.y.z` 到 npm。认证走 npm Trusted Publishing
+- **`publish-npm.yml`**：发 `@xyit/wellspring-core@x.y.z` 到 npm。认证走 npm Trusted Publishing
   （OIDC），仓库里不存 `NPM_TOKEN`；已发布过的版本自动跳过，失败了同样可以 `Run workflow` 重跑。
 
-两条工作流都会核对 tag 与 `package.json` 的 version（`v1.3.0` ↔ `1.3.0`），
+两条工作流都会核对 tag 与 `package.json` 的 version（`v1.3.1` ↔ `1.3.1`），
 对不上直接失败，避免发出与 tag 不符的包。
 
 ### npm 首次发布与 Trusted Publishing
 
-trusted publisher 只能配在已经存在的包上，所以 `@xyit-team/wellspring-core` 第一次上架要手动发一次：
+trusted publisher 只能配在已经存在的包上，所以 `@xyit/wellspring-core` 第一次上架要手动发一次：
 
 ```bash
-npm login              # 用对 @xyit-team 有发布权限的账号
+npm login              # 用对 @xyit 有发布权限的账号
 npm publish --access public   # 在仓库根目录，发 package.json 里的版本
 ```
 
@@ -110,7 +113,7 @@ npm publish --access public   # 在仓库根目录，发 package.json 里的版�
 等价命令行（npm >= 11.15.0）：
 
 ```bash
-npm trust github @xyit-team/wellspring-core \
+npm trust github @xyit/wellspring-core \
   --repo xyit-team/wellspring-core \
   --file publish-npm.yml \
   --allow-publish -y
@@ -118,7 +121,7 @@ npm trust github @xyit-team/wellspring-core \
 
 配好后推 tag 就由工作流发布，带 provenance 证明，不需要在 GitHub 里存 token。
 
-没有 npm 时的安装方式：从 Release 下 zip 后 `wellspring plugin install ./wellspring-core-1.3.0.zip`，
+没有 npm 时的安装方式：从 Release 下 zip 后 `wellspring plugin install ./wellspring-core-1.3.1.zip`，
 或直接 `wellspring plugin install github:xyit-team/wellspring-core`（宿主会取 Release 的 zip 资产）。
 
 Agent 基础工具：`read`、`write`、`edit`、`apply_patch`、`delete_file`、`grep`、`glob`、`list_dir`、

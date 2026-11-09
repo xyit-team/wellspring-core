@@ -49,7 +49,7 @@ function paths(): ResolvedPaths {
 }
 
 async function loadCoreTools(): Promise<AgentToolRegistry> {
-    const destination = join(root, "data", "plugins", "@xyit-team", "wellspring-core")
+    const destination = join(root, "data", "plugins", "@xyit", "wellspring-core")
     await mkdir(destination, { recursive: true })
     for (const name of PLUGIN_FILES) {
         await cp(join(resolve(import.meta.dirname, ".."), name), join(destination, name))
@@ -67,7 +67,7 @@ async function loadCoreTools(): Promise<AgentToolRegistry> {
         sandbox: { ...DEFAULT_SETTINGS.sandbox, mode: "best-effort" },
         sandboxBackend: new DirectBackend(),
     })
-    assert.equal(plugins.find((plugin) => plugin.id === "@xyit-team/wellspring-core")?.status, "ok")
+    assert.equal(plugins.find((plugin) => plugin.id === "@xyit/wellspring-core")?.status, "ok")
     return agentTools
 }
 

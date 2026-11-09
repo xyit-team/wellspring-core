@@ -48,9 +48,9 @@ function paths(): ResolvedPaths {
     }
 }
 
-test("@xyit-team/wellspring-core 注册全部 Agent 工具", { timeout: 20_000, skip: POSIX_ONLY }, async () => {
+test("@xyit/wellspring-core 注册全部 Agent 工具", { timeout: 20_000, skip: POSIX_ONLY }, async () => {
     const dataDir = join(root, "data")
-    const destination = join(dataDir, "plugins", "@xyit-team", "wellspring-core")
+    const destination = join(dataDir, "plugins", "@xyit", "wellspring-core")
     await mkdir(destination, { recursive: true })
     // 仓库根还有 node_modules / .host / test，只复制插件自己的文件
     for (const name of PLUGIN_FILES) {
@@ -69,7 +69,7 @@ test("@xyit-team/wellspring-core 注册全部 Agent 工具", { timeout: 20_000, 
         sandbox: { ...DEFAULT_SETTINGS.sandbox, mode: "best-effort" },
         sandboxBackend: new DirectBackend(),
     })
-    assert.equal(plugins.find((plugin) => plugin.id === "@xyit-team/wellspring-core")?.status, "ok")
+    assert.equal(plugins.find((plugin) => plugin.id === "@xyit/wellspring-core")?.status, "ok")
     assert.deepEqual(
         agentTools
             .list()
@@ -247,9 +247,9 @@ test("@xyit-team/wellspring-core 注册全部 Agent 工具", { timeout: 20_000, 
         false,
     )
     // 原文件进回收站：内容保留，meta.json 记录原路径
-    const trashRootDir = join(root, "data", "plugin-data", "@xyit-team", "wellspring-core", "trash")
+    const trashRootDir = join(root, "data", "plugin-data", "@xyit", "wellspring-core", "trash")
     const deletedTrash = String(deleted.data["trashPath"] ?? "")
-    assert.match(deletedTrash, /plugin-data[/\\]@xyit-team[/\\]wellspring-core[/\\]trash[/\\]/)
+    assert.match(deletedTrash, /plugin-data[/\\]@xyit[/\\]wellspring-core[/\\]trash[/\\]/)
     assert.equal(deleted.data["trashRoot"], trashRootDir)
     assert.deepEqual((await readdir(deletedTrash)).sort(), ["files", "meta.json"])
     assert.equal(

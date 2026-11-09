@@ -61,7 +61,7 @@ async function coreTools(): Promise<AgentToolRegistry> {
 }
 
 async function loadCoreTools(): Promise<AgentToolRegistry> {
-    const destination = join(dataDir, "plugins", "@xyit-team", "wellspring-core")
+    const destination = join(dataDir, "plugins", "@xyit", "wellspring-core")
     await mkdir(destination, { recursive: true })
     // 仓库根还有 node_modules / .host / test，只复制插件自己的文件
     for (const name of PLUGIN_FILES) {
@@ -80,7 +80,7 @@ async function loadCoreTools(): Promise<AgentToolRegistry> {
         sandbox: { ...DEFAULT_SETTINGS.sandbox, mode: "best-effort" },
         sandboxBackend: new DirectBackend(),
     })
-    assert.equal(plugins.find((plugin) => plugin.id === "@xyit-team/wellspring-core")?.status, "ok")
+    assert.equal(plugins.find((plugin) => plugin.id === "@xyit/wellspring-core")?.status, "ok")
     return agentTools
 }
 
@@ -207,7 +207,7 @@ test("skill_modify 容忍 description / whenToUse 多包一层引号", { timeout
     assert.equal(item?.["whenToUse"], "需要自检时")
 
     const raw = await readFile(
-        join(dataDir, "plugin-data", "@xyit-team", "wellspring-core", "skills", "quoted-skill", "SKILL.md"),
+        join(dataDir, "plugin-data", "@xyit", "wellspring-core", "skills", "quoted-skill", "SKILL.md"),
         "utf8",
     )
     assert.ok(!raw.includes('\\"'), `frontmatter 不应出现嵌套引号：\n${raw}`)
